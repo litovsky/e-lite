@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    { "id": "surviving", "label": "Surviving", "type": "core", "status": "base" },
+    { "id": "intellect", "label": "Интеллект", "type": "domain", "status": "base" },
+    { "id": "python", "label": "Изучение Python", "type": "skill", "status": "learned" }
+  ],
+  "edges": [
+    { "id": "e1", "source": "intellect", "target": "surviving", "label": "поддерживает", "type": "supports" },
+    { "id": "e2", "source": "python", "target": "intellect", "label": "ветка", "type": "branch" }
+  ]
+}
