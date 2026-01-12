@@ -1,29 +1,21 @@
 {
   "nodes": [
     { "id": "surviving", "label": "Surviving", "type": "core", "status": "base" },
+
     { "id": "intellect", "label": "Интеллект", "type": "domain", "status": "base" },
+    { "id": "python", "label": "Изучение Python", "type": "skill", "status": "base", "requires": ["intellect"] },
+    { "id": "fastapi", "label": "FastAPI", "type": "framework", "status": "base", "requires": ["python"] },
 
-    {
-      "id": "python",
-      "label": "Изучение Python",
-      "type": "skill",
-      "status": "base",
-      "requires": ["intellect"]
-    },
-
-    {
-      "id": "fastapi",
-      "label": "FastAPI",
-      "type": "framework",
-      "status": "optional",
-      "requires": ["python"]
-    }
+    { "id": "physical_activity", "label": "Физическая активность", "type": "domain", "status": "base" },
+    { "id": "exercises_dashboard", "label": "Дашборд: упражнения", "type": "dashboard", "status": "base", "requires": ["physical_activity"] }
   ],
-
   "edges": [
     { "id": "e1", "source": "intellect", "target": "surviving", "label": "поддерживает", "type": "supports" },
     { "id": "e2", "source": "python", "target": "intellect", "label": "ветка", "type": "branch" },
     { "id": "e3", "source": "intellect", "target": "python", "label": "requires", "type": "requires" },
-    { "id": "e4", "source": "fastapi", "target": "python", "label": "requires", "type": "requires" }
+    { "id": "e4", "source": "fastapi", "target": "python", "label": "requires", "type": "requires" },
+
+    { "id": "e5", "source": "physical_activity", "target": "surviving", "label": "поддерживает", "type": "supports" },
+    { "id": "e6", "source": "exercises_dashboard", "target": "physical_activity", "label": "requires", "type": "requires" }
   ]
 }
