@@ -29,18 +29,42 @@ export default function App() {
   useEffect(() => {
     if (!cyRef.current) return;
 
-    // clear container so Cytoscape doesn't stack canvases
+    // Clear container so Cytoscape doesn't stack canvases
     cyRef.current.innerHTML = "";
+
+    // Helpers to compute locked/unlocked based on requires
+    const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+
+    const isSatisfied = (reqId) => {
+      const reqNode = nodeById.get(reqId);
+      if (!reqNode) return false;
+
+      // satisfied if requirement is learned OR requirement is base
+      return learned.has(reqId) || reqNode.status === "base";
+    };
+
+    const computedNodes = graph.nodes.map((n) => {
+      // 1) learned always wins
+      if (learned.has(n.id)) return { ...n, status: "learned" };
+
+      // 2) base nodes stay base
+      if (n.status === "base") return n;
+
+      // 3) if requires exist -> locked/unlocked
+      const reqs = Array.isArray(n.requires) ? n.requires : [];
+      if (reqs.length > 0) {
+        const ok = reqs.every(isSatisfied);
+        return { ...n, status: ok ? "unlocked" : "locked" };
+      }
+
+      // 4) default: keep status as is
+      return n;
+    });
 
     const cy = cytoscape({
       container: cyRef.current,
       elements: [
-        ...graph.nodes.map((n) => ({
-          data: {
-            ...n,
-            status: learned.has(n.id) ? "learned" : n.status,
-          },
-        })),
+        ...computedNodes.map((n) => ({ data: n })),
         ...graph.edges.map((e) => ({ data: e })),
       ],
       style: [
@@ -59,24 +83,13 @@ export default function App() {
         },
 
         // Status-based colors
-        {
-          selector: 'node[status = "base"]',
-          style: { "background-color": "#2ecc71" },
-        },
-        {
-          selector: 'node[status = "learned"]',
-          style: { "background-color": "#3498db" },
-        },
-        {
-          selector: 'node[status = "locked"]',
-          style: { "background-color": "#95a5a6" },
-        },
+        { selector: 'node[status = "base"]', style: { "background-color": "#2ecc71" } },
+        { selector: 'node[status = "learned"]', style: { "background-color": "#3498db" } },
+        { selector: 'node[status = "locked"]', style: { "background-color": "#95a5a6" } },
+        { selector: 'node[status = "unlocked"]', style: { "background-color": "#f1c40f" } },
 
         // Special styling for the central node
-        {
-          selector: "#surviving",
-          style: { "background-color": "#111", color: "#fff" },
-        },
+        { selector: "#surviving", style: { "background-color": "#111", color: "#fff" } },
 
         // Edges
         {
@@ -105,7 +118,7 @@ export default function App() {
       wheelSensitivity: 0.2,
     });
 
-    cy.nodes().grabify(); // allow dragging nodes
+    cy.nodes().grabify();
 
     cy.on("tap", "node", (evt) => {
       setSelectedNode(evt.target.data());
@@ -114,13 +127,15 @@ export default function App() {
     return () => cy.destroy();
   }, [learned]);
 
+  const canLearn =
+    selectedNode &&
+    selectedNode.status !== "locked" &&
+    selectedNode.status !== "learned";
+
   return (
     <div style={{ height: "100vh", width: "100vw", display: "flex" }}>
       {/* Canvas */}
-      <div
-        ref={cyRef}
-        style={{ flex: 1, background: "#f5f5f5" }}
-      />
+      <div ref={cyRef} style={{ flex: 1, background: "#f5f5f5" }} />
 
       {/* Side panel */}
       <div
@@ -142,14 +157,36 @@ export default function App() {
               <b>Статус:</b> {selectedNode.status}
             </p>
 
-            {selectedNode.status !== "learned" && (
+            {Array.isArray(selectedNode.requires) &&
+              selectedNode.requires.length > 0 && (
+                <>
+                  <p>
+                    <b>Требуется:</b>
+                  </p>
+                  <ul>
+                    {selectedNode.requires.map((r) => (
+                      <li key={r}>
+                        {r} {learned.has(r) ? "✅" : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+
+            {selectedNode.status === "locked" && (
+              <p style={{ color: "#666" }}>
+                Недоступно: сначала выполни prerequisites.
+              </p>
+            )}
+
+            {canLearn && (
               <button
                 onClick={() => {
                   const next = new Set(learned);
                   next.add(selectedNode.id);
                   setLearned(next);
 
-                  // update panel immediately (graph will be rebuilt anyway)
+                  // update panel immediately (graph will rebuild anyway)
                   setSelectedNode({ ...selectedNode, status: "learned" });
                 }}
               >
