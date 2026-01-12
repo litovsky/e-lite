@@ -1,21 +1,48 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import cytoscape from "cytoscape";
 import graph from "./data/graph.json";
+
+const STORAGE_KEY = "e-lite.learned.v1";
 
 export default function App() {
   const cyRef = useRef(null);
 
+  const [selectedNode, setSelectedNode] = useState(null);
+
+  // learned nodes are stored in localStorage
+  const [learned, setLearned] = useState(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(arr);
+    } catch {
+      return new Set();
+    }
+  });
+
+  // persist learned -> localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(learned)));
+  }, [learned]);
+
+  // (Re)build graph whenever learned changes (simple & robust for MVP)
   useEffect(() => {
     if (!cyRef.current) return;
 
+    // clear container so Cytoscape doesn't stack canvases
+    cyRef.current.innerHTML = "";
+
     const cy = cytoscape({
       container: cyRef.current,
-
       elements: [
-        ...graph.nodes.map((n) => ({ data: n })),
+        ...graph.nodes.map((n) => ({
+          data: {
+            ...n,
+            status: learned.has(n.id) ? "learned" : n.status,
+          },
+        })),
         ...graph.edges.map((e) => ({ data: e })),
       ],
-
       style: [
         // Base style for all nodes (WITHOUT background-color here)
         {
@@ -67,7 +94,6 @@ export default function App() {
           },
         },
       ],
-
       layout: {
         name: "preset",
         positions: {
@@ -76,21 +102,65 @@ export default function App() {
           python: { x: 160, y: 180 },
         },
       },
-
       wheelSensitivity: 0.2,
     });
 
     cy.nodes().grabify(); // allow dragging nodes
 
+    cy.on("tap", "node", (evt) => {
+      setSelectedNode(evt.target.data());
+    });
+
     return () => cy.destroy();
-  }, []);
+  }, [learned]);
 
   return (
-    <div style={{ height: "100vh", width: "100vw" }}>
+    <div style={{ height: "100vh", width: "100vw", display: "flex" }}>
+      {/* Canvas */}
       <div
         ref={cyRef}
-        style={{ height: "100%", width: "100%", background: "#f5f5f5" }}
+        style={{ flex: 1, background: "#f5f5f5" }}
       />
+
+      {/* Side panel */}
+      <div
+        style={{
+          width: 320,
+          padding: 16,
+          borderLeft: "1px solid #ddd",
+          background: "#fff",
+        }}
+      >
+        {selectedNode ? (
+          <>
+            <h3 style={{ marginTop: 0 }}>{selectedNode.label}</h3>
+
+            <p>
+              <b>Тип:</b> {selectedNode.type}
+            </p>
+            <p>
+              <b>Статус:</b> {selectedNode.status}
+            </p>
+
+            {selectedNode.status !== "learned" && (
+              <button
+                onClick={() => {
+                  const next = new Set(learned);
+                  next.add(selectedNode.id);
+                  setLearned(next);
+
+                  // update panel immediately (graph will be rebuilt anyway)
+                  setSelectedNode({ ...selectedNode, status: "learned" });
+                }}
+              >
+                Отметить как learned
+              </button>
+            )}
+          </>
+        ) : (
+          <p>Кликни на узел</p>
+        )}
+      </div>
     </div>
   );
 }
