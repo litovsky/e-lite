@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import graph from "./data/graph.json";
-
+import PushupsForm from "./components/PushupsForm";
 import { loadLearnedSet, saveLearnedSet } from "./storage/learnedStore";
 import { computeGraphState } from "./graph/computeGraphState";
 import { buildCy } from "./graph/buildCy";
@@ -96,7 +96,7 @@ export default function App() {
                 Отметить как learned
               </button>
             )}
-
+            <PushupsForm userId="arseniy" />
             {/* Dashboard hook */}
             {selectedNode.id === "exercises_dashboard" && <ExerciseDashboard />}
           </>
