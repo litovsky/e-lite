@@ -1,105 +1,90 @@
+# api/main.py
+"""
+e-lite backend (FastAPI)
+- Reads DB connection settings from api/.env (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE)
+- Does NOT connect to DB on startup (so server doesn't crash if DB is temporarily unavailable)
+- Provides health endpoints:
+    GET /health         -> basic service health
+    GET /health/db      -> checks DB connectivity (select now())
+"""
+
 from __future__ import annotations
 
 import os
-from datetime import date
-from typing import Optional
+from contextlib import contextmanager
+from typing import Iterator, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 import psycopg
 
+# Load env vars from api/.env (works when uvicorn is run from api/ folder)
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set. Put it into api/.env")
+app = FastAPI(title="e-lite API", version="0.1.0")
 
-app = FastAPI(title="e-lite API")
 
-# чтобы React (localhost:5173) мог ходить в API (localhost:8000)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def _require_env(name: str) -> str:
+    val = os.getenv(name)
+    if not val:
+        raise RuntimeError(f"Missing required env var: {name}")
+    return val
 
-def get_conn():
-    # Supabase обычно требует SSL
-    return psycopg.connect(DATABASE_URL)
 
-@app.on_event("startup")
-def startup():
-    # создаём таблицу один раз при старте (для MVP ок)
-    sql = """
-    create table if not exists exercise_entries (
-      id bigserial primary key,
-      user_id text not null,
-      exercise text not null,
-      value int not null check (value >= 0),
-      entry_date date not null,
-      created_at timestamptz not null default now(),
-      unique (user_id, exercise, entry_date)
-    );
+def get_db_settings() -> dict:
     """
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql)
-        conn.commit()
+    Reads DB settings from environment variables.
+    Expected variables in api/.env:
+      DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE
+    """
+    host = _require_env("DB_HOST")
+    port = int(os.getenv("DB_PORT", "5432"))
+    dbname = os.getenv("DB_NAME", "postgres")
+    user = _require_env("DB_USER")
+    password = _require_env("DB_PASSWORD")
+    sslmode = os.getenv("DB_SSLMODE", "require")
 
-class ExerciseCreate(BaseModel):
-    user_id: str = Field(..., min_length=1, max_length=64)
-    exercise: str = Field(..., min_length=1, max_length=64)
-    value: int = Field(..., ge=0, le=100000)
-    entry_date: date
+    return {
+        "host": host,
+        "port": port,
+        "dbname": dbname,
+        "user": user,
+        "password": password,
+        "sslmode": sslmode,
+    }
 
-class ExerciseOut(BaseModel):
-    entry_date: date
-    value: int
+
+@contextmanager
+def get_conn() -> Iterator[psycopg.Connection]:
+    """
+    Opens and yields a psycopg (v3) connection using keyword args.
+    Using kwargs avoids issues with special characters in password.
+    """
+    cfg = get_db_settings()
+    conn = psycopg.connect(**cfg)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
 
 @app.get("/health")
-def health():
-    return {"ok": True}
+def health() -> dict:
+    return {"ok": True, "service": "e-lite-api"}
 
-@app.post("/exercise", status_code=201)
-def upsert_exercise(payload: ExerciseCreate):
-    sql = """
-    insert into exercise_entries (user_id, exercise, value, entry_date)
-    values (%s, %s, %s, %s)
-    on conflict (user_id, exercise, entry_date)
-    do update set value = excluded.value;
+
+@app.get("/health/db")
+def health_db() -> JSONResponse:
+    """
+    Checks DB connectivity. If DB is down/misconfigured, returns ok=false with error details.
     """
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (payload.user_id, payload.exercise, payload.value, payload.entry_date))
-            conn.commit()
+                cur.execute("select now();")
+                now = cur.fetchone()[0]
+        return JSONResponse({"ok": True, "db": "connected", "now": str(now)}, status_code=200)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DB error: {e}")
-
-    return {"saved": True}
-
-@app.get("/exercise", response_model=list[ExerciseOut])
-def list_exercise(user_id: str, exercise: str = "pushups", limit: int = 60):
-    if limit < 1 or limit > 3650:
-        raise HTTPException(status_code=400, detail="limit must be between 1 and 3650")
-
-    sql = """
-    select entry_date, value
-    from exercise_entries
-    where user_id = %s and exercise = %s
-    order by entry_date asc
-    limit %s;
-    """
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, (user_id, exercise, limit))
-                rows = cur.fetchall()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DB error: {e}")
-
-    return [{"entry_date": r[0], "value": r[1]} for r in rows]
+        # Do not crash the app; just report the error.
+        return JSONResponse({"ok": False, "db": "error", "error": str(e)}, status_code=503)
