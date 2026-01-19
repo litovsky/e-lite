@@ -1,13 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import graph from "./data/graph.json";
+
 import PushupsForm from "./components/PushupsForm";
+import PushupsStats from "./components/PushupsStats";
+import ExerciseDashboard from "./components/ExerciseDashboard";
+
 import { loadLearnedSet, saveLearnedSet } from "./storage/learnedStore";
 import { computeGraphState } from "./graph/computeGraphState";
 import { buildCy } from "./graph/buildCy";
 
-import ExerciseDashboard from "./components/ExerciseDashboard";
-
 export default function App() {
+  const [refreshKey, setRefreshKey] = useState(0);
+
   const cyRef = useRef(null);
   const cyInstanceRef = useRef(null);
 
@@ -19,8 +23,10 @@ export default function App() {
     saveLearnedSet(learned);
   }, [learned]);
 
-  // compute node statuses
-  const { computedNodes, labelById } = computeGraphState(graph, learned);
+  // compute node statuses (memo to avoid useless recalcs)
+  const { computedNodes, labelById } = useMemo(() => {
+    return computeGraphState(graph, learned);
+  }, [learned]);
 
   // build graph when learned changes
   useEffect(() => {
@@ -38,7 +44,7 @@ export default function App() {
       cyInstanceRef.current?.destroy?.();
       cyInstanceRef.current = null;
     };
-  }, [learned, computedNodes]);
+  }, [computedNodes]);
 
   const canLearn =
     selectedNode &&
@@ -56,10 +62,19 @@ export default function App() {
           borderLeft: "1px solid #ddd",
           background: "#fff",
           overflow: "auto",
+          display: "grid",
+          gap: 16,
         }}
       >
+        {/* Форма + статистика */}
+        <div style={{ display: "grid", gap: 16 }}>
+          <PushupsForm userId="arseniy" onCreated={() => setRefreshKey((k) => k + 1)} />
+          <PushupsStats userId="arseniy" refreshKey={refreshKey} />
+        </div>
+
+        {/* Инфо по выбранному узлу */}
         {selectedNode ? (
-          <>
+          <div>
             <h3 style={{ marginTop: 0 }}>{selectedNode.label}</h3>
 
             <p><b>Тип:</b> {selectedNode.type}</p>
@@ -96,10 +111,9 @@ export default function App() {
                 Отметить как learned
               </button>
             )}
-            <PushupsForm userId="arseniy" />
-            {/* Dashboard hook */}
+
             {selectedNode.id === "exercises_dashboard" && <ExerciseDashboard />}
-          </>
+          </div>
         ) : (
           <p>Кликни на узел</p>
         )}

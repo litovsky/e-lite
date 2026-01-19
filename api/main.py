@@ -1,16 +1,15 @@
-# api/main.py
 from __future__ import annotations
 
 import os
 from contextlib import contextmanager
-from datetime import date
-from typing import Iterator, Optional, List, Dict, Any
-from fastapi.middleware.cors import CORSMiddleware
+from typing import Iterator
+
+import psycopg
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-import psycopg
 
 load_dotenv()
 
