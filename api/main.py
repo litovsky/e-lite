@@ -203,3 +203,44 @@ def pushups_stats(user_id: str = Query(default="arseniy")) -> JSONResponse:
         )
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+@app.get("/pushups/daily")
+def pushups_daily(
+    user_id: str = Query(default="arseniy"),
+    days: int = Query(default=30, ge=1, le=365),
+) -> JSONResponse:
+    """
+    Daily time series for last N days (UTC):
+    returns [{date: "YYYY-MM-DD", reps: int}]
+    """
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    with series as (
+                      select (now() at time zone 'utc')::date - (n || ' day')::interval as d
+                      from generate_series(0, %s - 1) as n
+                    ),
+                    agg as (
+                      select created_at::date as d, sum(reps)::int as reps
+                      from public.pushups
+                      where user_id = %s
+                        and created_at::date >= (now() at time zone 'utc')::date - (%s - 1)
+                      group by created_at::date
+                    )
+                    select to_char(s.d::date, 'YYYY-MM-DD') as date,
+                           coalesce(a.reps, 0) as reps
+                    from series s
+                    left join agg a on a.d = s.d::date
+                    order by s.d::date asc;
+                    """,
+                    (days, user_id, days),
+                )
+                rows = cur.fetchall()
+
+        items = [{"date": r[0], "reps": int(r[1])} for r in rows]
+        return JSONResponse({"ok": True, "user_id": user_id, "days": days, "items": items}, status_code=200)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
