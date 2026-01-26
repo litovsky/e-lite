@@ -112,7 +112,9 @@ export default function App() {
               </button>
             )}
 
-            {selectedNode.id === "exercises_dashboard" && <ExerciseDashboard />}
+            {selectedNode.id === "exercises_dashboard" && (
+              <ExerciseDashboard userId="arseniy" refreshKey={refreshKey} />
+              )}
           </div>
         ) : (
           <p>Кликни на узел</p>
