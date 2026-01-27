@@ -106,14 +106,20 @@ export default function App() {
               </button>
             )}
 
-{selectedNode.id === "exercises_dashboard" && (
+{selectedNode.id === "pushups_dashboard" && (
   <div style={{ display: "grid", gap: 16 }}>
     <PushupsForm
       userId="arseniy"
       onCreated={() => setRefreshKey((k) => k + 1)}
     />
-    <PushupsStats userId="arseniy" refreshKey={refreshKey} />
-    <ExerciseDashboard userId="arseniy" refreshKey={refreshKey} />
+    <PushupsStats
+      userId="arseniy"
+      refreshKey={refreshKey}
+    />
+    <ExerciseDashboard
+      userId="arseniy"
+      refreshKey={refreshKey}
+    />
   </div>
 )}
           </div>
