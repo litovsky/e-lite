@@ -66,12 +66,6 @@ export default function App() {
           gap: 16,
         }}
       >
-        {/* Форма + статистика */}
-        <div style={{ display: "grid", gap: 16 }}>
-          <PushupsForm userId="arseniy" onCreated={() => setRefreshKey((k) => k + 1)} />
-          <PushupsStats userId="arseniy" refreshKey={refreshKey} />
-        </div>
-
         {/* Инфо по выбранному узлу */}
         {selectedNode ? (
           <div>
@@ -112,9 +106,16 @@ export default function App() {
               </button>
             )}
 
-            {selectedNode.id === "exercises_dashboard" && (
-              <ExerciseDashboard userId="arseniy" refreshKey={refreshKey} />
-              )}
+{selectedNode.id === "exercises_dashboard" && (
+  <div style={{ display: "grid", gap: 16 }}>
+    <PushupsForm
+      userId="arseniy"
+      onCreated={() => setRefreshKey((k) => k + 1)}
+    />
+    <PushupsStats userId="arseniy" refreshKey={refreshKey} />
+    <ExerciseDashboard userId="arseniy" refreshKey={refreshKey} />
+  </div>
+)}
           </div>
         ) : (
           <p>Кликни на узел</p>
