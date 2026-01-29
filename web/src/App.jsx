@@ -29,7 +29,34 @@ export default function App() {
     () => ({ nodes: computedNodes, edges: graph.edges }),
     [computedNodes]
   );
+  const graphWithTools = useMemo(() => {
+  const nodes = [...forceGraphData.nodes];
+  const edges = [...forceGraphData.edges];
 
+  for (const v of views.views || []) {
+    if (!v.bindsTo) continue;
+
+    const toolNodeId = `tool:${v.id}`;
+
+    nodes.push({
+      id: toolNodeId,
+      label: v.label ?? "Tool",
+      kind: "tool",
+      status: "tool",
+      isTool: true,
+    });
+
+    edges.push({
+      id: `edge:${v.bindsTo}->${toolNodeId}`,
+      source: v.bindsTo,
+      target: toolNodeId,
+      rel: "tool",
+      isTool: true,
+    });
+  }
+
+  return { nodes, edges };
+}, [forceGraphData]);
   const validation = useMemo(() => validateOntology(forceGraphData), [forceGraphData]);
 
   useEffect(() => {
@@ -51,8 +78,25 @@ export default function App() {
     }
     return map;
   }, []);
+  const viewByToolNodeId = useMemo(() => {
+  const map = new Map();
+  for (const v of views?.views || []) {
+    const toolNodeId = `tool:${v.id}`;
+    map.set(toolNodeId, v);
+  }
+  return map;
+}, []);
 
-  const activeView = selectedNode ? viewByNodeId.get(selectedNode.id) : null;
+  const activeView = useMemo(() => {
+  if (!selectedNode) return null;
+
+  // Если кликнули на tool-узел — берём view напрямую
+  const toolView = viewByToolNodeId.get(selectedNode.id);
+  if (toolView) return toolView;
+
+  // Если кликнули на основной узел — берём view по bindsTo
+  return viewByNodeId.get(selectedNode.id) ?? null;
+}, [selectedNode, viewByNodeId, viewByToolNodeId]);
 
   const canLearn =
     selectedNode && selectedNode.status !== "locked" && selectedNode.status !== "learned";
@@ -78,7 +122,7 @@ export default function App() {
       >
         <div style={{ position: "absolute", inset: 0 }}>
           <ForceGraphCanvas
-            graph={forceGraphData}
+            graph={graphWithTools}
             onNodeSelect={setSelectedNode}
             selectedNodeId={selectedNode?.id}
             wheelSensitivity={10}
