@@ -9,9 +9,6 @@ export default function ForceGraphCanvas({
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
 
-  const nodesCount = graph?.nodes?.length ?? 0;
-  const edgesCount = graph?.edges?.length ?? 0;
-
   const data = useMemo(() => {
     const nodes = (graph?.nodes ?? []).map((n) => ({ ...n }));
     const links = (graph?.edges ?? []).map((e) => ({
@@ -32,34 +29,40 @@ export default function ForceGraphCanvas({
 
     const byId = new Map(data.nodes.map((n) => [n.id, n]));
 
-    // --- size ---
+    /* ================= SIZE / DPI ================= */
     let w = 1;
     let h = 1;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
 
     const setSize = () => {
       const rect = wrap.getBoundingClientRect();
-      w = Math.max(1, Math.floor(rect.width));
-      h = Math.max(1, Math.floor(rect.height));
+      w = Math.max(1, rect.width);
+      h = Math.max(1, rect.height);
 
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
-
-      // CSS размер в px (важно!)
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
 
-      // рисуем в CSS-пикселях
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
-    // ✅ FIX: clear должен быть объявлен ДО draw()
-    const clear = () => {
-      ctx.clearRect(0, 0, w, h);
+    const clear = () => ctx.clearRect(0, 0, w, h);
+
+    /* ================= HELPERS: TOOLS ================= */
+    const isToolNode = (n) => n?.kind === "tool" || n?.isTool === true;
+    const isToolEdge = (e) => {
+    if (e?.isTool === true || e?.rel === "tool") return true;
+
+    const s = typeof e.source === "object" ? e.source : byId.get(e.source);
+    const t = typeof e.target === "object" ? e.target : byId.get(e.target);
+
+    return isToolNode(s) || isToolNode(t);
     };
 
-    // --- draw ---
+    /* ================= STYLE ================= */
     const nodeFill = (n) => {
+      if (isToolNode(n)) return "#6c7a89";
       if (n.id === "surviving") return "#111";
       if (n.status === "learned") return "#3498db";
       if (n.status === "locked") return "#95a5a6";
@@ -67,48 +70,116 @@ export default function ForceGraphCanvas({
       return "#2ecc71";
     };
 
-    let t = d3.zoomIdentity.translate(w / 2, h / 2).scale(1);
+    const nodeAlpha = (n) => {
+      if (n.id === "surviving") return 1;
+      if (isToolNode(n)) return 0.75;
+      if (n.status === "learned") return 1;
+      if (n.status === "locked") return 0.12;
+      return 0.4;
+    };
 
+    const edgeAlpha = (l) => {
+      if (isToolEdge(l)) return 0.35;
+
+      const s = typeof l.source === "object" ? l.source : byId.get(l.source);
+      const t = typeof l.target === "object" ? l.target : byId.get(l.target);
+      if (!s || !t) return 0.05;
+
+      const sOk = s.id === "surviving" || s.status === "learned";
+      const tOk = t.id === "surviving" || t.status === "learned";
+
+      if (sOk && tOk) return 0.7;
+      if (s.status === "locked" || t.status === "locked") return 0.08;
+      return 0.15;
+    };
+
+    const nodeRadius = (n) => (n.id === "surviving" ? 46 : isToolNode(n) ? 24 : 39);
+
+    /* ================= CAMERA ================= */
+    let transform = d3.zoomIdentity;
+    let zoomEnabled = true;
+
+    const zoom = d3
+      .zoom()
+      .scaleExtent([0.2, 4])
+      .on("zoom", (e) => {
+        transform = e.transform;
+        draw();
+      });
+
+    const enableZoom = () => {
+      if (zoomEnabled) return;
+      d3.select(canvas).call(zoom).call(zoom.transform, transform);
+      zoomEnabled = true;
+    };
+
+    const disableZoom = () => {
+      if (!zoomEnabled) return;
+      // снимаем zoom listeners
+      d3.select(canvas).on(".zoom", null);
+      zoomEnabled = false;
+    };
+
+    d3.select(canvas).call(zoom);
+
+    const onWheel = (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+
+      const base = e.deltaY > 0 ? 0.92 : 1.08;
+      const k = Math.pow(base, wheelSensitivity / 2);
+
+      d3.select(canvas).call(zoom.scaleBy, k, [px, py]);
+    };
+
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+
+    /* ================= DRAW ================= */
     function draw() {
-      if (w < 50 || h < 50) return;
-
       clear();
-
-      // фон
       ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, w, h);
 
       ctx.save();
-      ctx.translate(t.x, t.y);
-      ctx.scale(t.k, t.k);
+      ctx.translate(transform.x, transform.y);
+      ctx.scale(transform.k, transform.k);
 
       // edges
-      ctx.strokeStyle = "#27ae60";
-      ctx.lineWidth = 2;
-
       for (const l of data.links) {
         const s = typeof l.source === "object" ? l.source : byId.get(l.source);
-        const tg = typeof l.target === "object" ? l.target : byId.get(l.target);
-        if (!s || !tg) continue;
+        const t = typeof l.target === "object" ? l.target : byId.get(l.target);
+        if (!s || !t) continue;
+
+        ctx.globalAlpha = edgeAlpha(l);
+        ctx.strokeStyle = isToolEdge(l) ? "#6c7a89" : "#27ae60";
+        ctx.lineWidth = isToolEdge(l) ? 1.5 : 2;
+
+        if (isToolEdge(l)) ctx.setLineDash([6, 6]);
+        else ctx.setLineDash([]);
 
         ctx.beginPath();
         ctx.moveTo(s.x ?? 0, s.y ?? 0);
-        ctx.lineTo(tg.x ?? 0, tg.y ?? 0);
+        ctx.lineTo(t.x ?? 0, t.y ?? 0);
         ctx.stroke();
+
+        ctx.setLineDash([]);
       }
 
       // nodes
       for (const n of data.nodes) {
         const x = n.x ?? 0;
         const y = n.y ?? 0;
-        const r = n.id === "surviving" ? 46 : 39;
+        const r = nodeRadius(n);
+        const a = nodeAlpha(n);
 
-        // тень + заливка
         ctx.save();
-        ctx.shadowColor = "rgba(0,0,0,0.18)";
-        ctx.shadowBlur = 12;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 6;
+        ctx.globalAlpha = a;
+
+        ctx.shadowColor = isToolNode(n) ? "rgba(0,0,0,0.10)" : "rgba(0,0,0,0.18)";
+        ctx.shadowBlur = isToolNode(n) ? 8 : 12;
+        ctx.shadowOffsetY = isToolNode(n) ? 4 : 6;
 
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -116,15 +187,15 @@ export default function ForceGraphCanvas({
         ctx.fill();
         ctx.restore();
 
-        // обводка
+        ctx.globalAlpha = a;
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
         ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
+        ctx.lineWidth = isToolNode(n) ? 1.5 : 2;
         ctx.stroke();
 
-        // текст
-        ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+        ctx.globalAlpha = a;
+        ctx.font = isToolNode(n) ? "12px system-ui" : "14px system-ui";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillStyle = n.id === "surviving" ? "#fff" : "#111";
@@ -132,73 +203,33 @@ export default function ForceGraphCanvas({
       }
 
       ctx.restore();
+      ctx.globalAlpha = 1;
     }
 
-    // --- ResizeObserver ---
-    const ro = new ResizeObserver(() => {
-      setSize();
-      draw();
-    });
-    ro.observe(wrap);
-
+    /* ================= INIT ================= */
     setSize();
+    if (!data.nodes.length) return;
 
-    // Если узлов нет — показываем сообщение на канвасе и выходим
-    if (!data.nodes.length) {
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = "#b00020";
-      ctx.font = "16px system-ui";
-      ctx.fillText("NO NODES (graph.nodes.length === 0)", 16, 32);
-      ctx.fillStyle = "#333";
-      ctx.font = "14px system-ui";
-      ctx.fillText("Проверь graph.json / computeGraphState()", 16, 56);
-
-      return () => {
-        ro.disconnect();
-      };
-    }
-
-    // --- initial positions (кольцо) ---
+    // стартовая раскладка кольцом
     const R = 220;
     data.nodes.forEach((n, i) => {
-      const a = (i / Math.max(1, data.nodes.length)) * Math.PI * 2;
+      const a = (i / data.nodes.length) * Math.PI * 2;
       n.x = Math.cos(a) * R;
       n.y = Math.sin(a) * R;
     });
 
-    // --- fix core ---
+    // фиксируем surviving в (0,0)
     const core = byId.get("surviving");
     if (core) {
       core.fx = 0;
       core.fy = 0;
     }
 
-    // --- zoom/pan ---
-    const zoom = d3
-      .zoom()
-      .scaleExtent([0.2, 4])
-      .on("zoom", (event) => {
-        t = event.transform;
-        draw();
-      });
+    // центрируем камеру один раз при загрузке
+    transform = d3.zoomIdentity.translate(w / 2, h / 2).scale(1);
+    d3.select(canvas).call(zoom.transform, transform);
 
-    d3.select(canvas).call(zoom).call(zoom.transform, t);
-
-    const onWheel = (ev) => {
-      ev.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const px = ev.clientX - rect.left;
-      const py = ev.clientY - rect.top;
-
-      const base = ev.deltaY > 0 ? 0.92 : 1.08;
-      const k = Math.pow(base, wheelSensitivity / 2);
-
-      d3.select(canvas).call(zoom.scaleBy, k, [px, py]);
-    };
-    canvas.addEventListener("wheel", onWheel, { passive: false });
-
-    // --- simulation ---
+    /* ================= SIMULATION ================= */
     const sim = d3
       .forceSimulation(data.nodes)
       .force(
@@ -206,38 +237,33 @@ export default function ForceGraphCanvas({
         d3
           .forceLink(data.links)
           .id((d) => d.id)
-          .distance((l) => {
-            const lbl = l.label || l.type;
-            if (lbl === "поддерживает" || lbl === "supports") return 240;
-            return 180;
-          })
-          .strength(0.6)
+          .distance((l) => (isToolEdge(l) ? 110 : 190))
+          .strength((l) => (isToolEdge(l) ? 0.35 : 0.6))
       )
-      .force("charge", d3.forceManyBody().strength(-900))
+      .force("charge", d3.forceManyBody().strength((n) => (isToolNode(n) ? -550 : -950)))
       .force(
         "collide",
         d3
           .forceCollide()
-          .radius((n) => (n.id === "surviving" ? 54 : 46))
-          .strength(0.9)
+          .radius((n) => (n.id === "surviving" ? 54 : isToolNode(n) ? 30 : 46))
       )
       .force("x", d3.forceX(0).strength(0.03))
       .force("y", d3.forceY(0).strength(0.03))
       .alpha(1)
-      .alphaDecay(0.02);
+      .alphaDecay(0.03)
+      .velocityDecay(0.35);
 
-    // --- helpers for picking ---
-    const screenToWorld = (sx, sy) => {
-      const x = (sx - t.x) / t.k;
-      const y = (sy - t.y) / t.k;
-      return { x, y };
-    };
+    /* ================= HIT TEST / DRAG ================= */
+    const screenToWorld = (sx, sy) => ({
+      x: (sx - transform.x) / transform.k,
+      y: (sy - transform.y) / transform.k,
+    });
 
     const findNodeAt = (sx, sy) => {
       const { x, y } = screenToWorld(sx, sy);
       for (let i = data.nodes.length - 1; i >= 0; i--) {
         const n = data.nodes[i];
-        const r = n.id === "surviving" ? 46 : 39;
+        const r = nodeRadius(n);
         const dx = x - (n.x ?? 0);
         const dy = y - (n.y ?? 0);
         if (dx * dx + dy * dy <= r * r) return n;
@@ -245,53 +271,45 @@ export default function ForceGraphCanvas({
       return null;
     };
 
-    // --- drag ---
     let dragging = null;
-    let zoomEnabled = true;
 
-    const disableZoom = () => {
-      if (!zoomEnabled) return;
-      d3.select(canvas).on(".zoom", null);
-      zoomEnabled = false;
-    };
-    const enableZoom = () => {
-      if (zoomEnabled) return;
-      d3.select(canvas).call(zoom).call(zoom.transform, t);
-      zoomEnabled = true;
-    };
-
-    const onDown = (ev) => {
+    const onPointerDown = (e) => {
       const rect = canvas.getBoundingClientRect();
-      const sx = ev.clientX - rect.left;
-      const sy = ev.clientY - rect.top;
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
 
       const n = findNodeAt(sx, sy);
-      if (!n) return;
+      if (!n) {
+        // клик по пустоте — pan/zoom
+        enableZoom();
+        return;
+      }
 
+      // клик по узлу — drag узла, отключаем zoom
       dragging = n;
       disableZoom();
 
-      sim.alphaTarget(0.2).restart();
-      const { x, y } = screenToWorld(sx, sy);
-      n.fx = x;
-      n.fy = y;
+      const p = screenToWorld(sx, sy);
+      n.fx = p.x;
+      n.fy = p.y;
+
+      sim.alpha(0.3).restart();
     };
 
-    const onMove = (ev) => {
+    const onPointerMove = (e) => {
       if (!dragging) return;
       const rect = canvas.getBoundingClientRect();
-      const sx = ev.clientX - rect.left;
-      const sy = ev.clientY - rect.top;
-
-      const { x, y } = screenToWorld(sx, sy);
-      dragging.fx = x;
-      dragging.fy = y;
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      const p = screenToWorld(sx, sy);
+      dragging.fx = p.x;
+      dragging.fy = p.y;
     };
 
-    const onUp = (ev) => {
+    const onPointerUp = (e) => {
       const rect = canvas.getBoundingClientRect();
-      const sx = ev.clientX - rect.left;
-      const sy = ev.clientY - rect.top;
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
 
       const clicked = findNodeAt(sx, sy);
       if (clicked) onNodeSelect?.({ ...clicked });
@@ -302,67 +320,37 @@ export default function ForceGraphCanvas({
           dragging.fy = null;
         }
         dragging = null;
-        sim.alphaTarget(0);
+
+        // возвращаем pan/zoom
         enableZoom();
+
+        // затухаем, чтобы не “отыгрывало” обратно
+        sim.alphaTarget(0);
       }
     };
 
-    canvas.addEventListener("pointerdown", onDown);
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    canvas.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
 
     sim.on("tick", draw);
     draw();
 
     return () => {
-      ro.disconnect();
       sim.stop();
       canvas.removeEventListener("wheel", onWheel);
-      canvas.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
     };
   }, [data, onNodeSelect, wheelSensitivity]);
 
   return (
     <div
       ref={wrapRef}
-      style={{
-        width: "100%",
-        height: "100%",
-        position: "relative",
-        background: "#f5f5f5",
-        overflow: "hidden",
-      }}
+      style={{ width: "100%", height: "100%", background: "#f5f5f5" }}
     >
-      {/* overlay — виден всегда */}
-      <div
-        style={{
-          position: "absolute",
-          top: 10,
-          left: 10,
-          zIndex: 10,
-          padding: "6px 8px",
-          background: "rgba(255,255,255,0.9)",
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          fontSize: 12,
-          pointerEvents: "none",
-        }}
-      >
-        ForceGraphCanvas mounted
-        <br />
-        nodes: {nodesCount} | edges: {edgesCount}
-      </div>
-
-      <canvas
-        ref={canvasRef}
-        style={{
-          display: "block",
-          background: "#fff",
-          outline: "2px solid rgba(255,0,0,0.18)",
-        }}
-      />
+      <canvas ref={canvasRef} style={{ display: "block" }} />
     </div>
   );
 }
