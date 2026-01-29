@@ -1,46 +1,23 @@
 {
   "nodes": [
-    { "id": "surviving", "label": "Surviving", "type": "core", "status": "base" },
+    { "id": "surviving", "label": "Surviving", "type": "core", "kind": "core", "status": "base" },
 
-    { "id": "intellect", "label": "Интеллект", "type": "domain", "status": "base" },
-    { "id": "python", "label": "Изучение Python", "type": "skill", "status": "base", "requires": ["intellect"] },
-    { "id": "fastapi", "label": "FastAPI", "type": "framework", "status": "base", "requires": ["python"] },
+    { "id": "intellect", "label": "Интеллект", "type": "domain", "kind": "domain", "status": "base" },
+    { "id": "python", "label": "Изучение Python", "type": "skill", "kind": "skill", "status": "base", "requires": ["intellect"] },
+    { "id": "fastapi", "label": "FastAPI", "type": "framework", "kind": "tool", "status": "base", "requires": ["python"] },
 
-    { "id": "physical_activity", "label": "Физическая активность", "type": "domain", "status": "base" },
-    {
-  "id": "pushups",
-  "label": "Отжимания",
-  "type": "skill",
-  "status": "base",
-  "requires": ["physical_activity"]
-},
-{
-  "id": "pushups_dashboard",
-  "label": "Дашборд: отжимания",
-  "type": "dashboard",
-  "status": "base",
-  "requires": ["pushups"]
-}
+    { "id": "physical_activity", "label": "Физическая активность", "type": "domain", "kind": "domain", "status": "base" },
+    { "id": "pushups", "label": "Отжимания", "type": "skill", "kind": "skill", "status": "base", "requires": ["physical_activity"] },
+    { "id": "pushups_dashboard", "label": "Дашборд: отжимания", "type": "dashboard", "kind": "tool", "status": "base", "requires": ["pushups"] }
   ],
   "edges": [
-    { "id": "e1", "source": "intellect", "target": "surviving", "label": "поддерживает", "type": "supports" },
-    { "id": "e2", "source": "python", "target": "intellect", "label": "ветка", "type": "branch" },
-    { "id": "e3", "source": "intellect", "target": "python", "label": "requires", "type": "requires" },
-    { "id": "e4", "source": "fastapi", "target": "python", "label": "requires", "type": "requires" },
-    { "id": "e5", "source": "physical_activity", "target": "surviving", "label": "поддерживает", "type": "supports" },
-    {
-  "id": "e6",
-  "source": "pushups",
-  "target": "physical_activity",
-  "label": "requires",
-  "type": "requires"
-},
-{
-  "id": "e7",
-  "source": "pushups_dashboard",
-  "target": "pushups",
-  "label": "requires",
-  "type": "requires"
-}
+    { "id": "e1", "source": "intellect", "target": "surviving", "label": "поддерживает", "type": "supports", "rel": "supports" },
+    { "id": "e2", "source": "python", "target": "intellect", "label": "ветка", "type": "branch", "rel": "part_of" },
+    { "id": "e3", "source": "intellect", "target": "python", "label": "requires", "type": "requires", "rel": "requires" },
+    { "id": "e4", "source": "fastapi", "target": "python", "label": "requires", "type": "requires", "rel": "requires" },
+
+    { "id": "e5", "source": "physical_activity", "target": "surviving", "label": "поддерживает", "type": "supports", "rel": "supports" },
+    { "id": "e6", "source": "pushups", "target": "physical_activity", "label": "requires", "type": "requires", "rel": "requires" },
+    { "id": "e7", "source": "pushups_dashboard", "target": "pushups", "label": "requires", "type": "requires", "rel": "requires" }
   ]
 }
