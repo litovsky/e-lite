@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+
 import graph from "./data/graph.json";
-import { validateOntology } from "./graph/ontology";
+import views from "./data/views.json";
 
 import PushupsForm from "./components/PushupsForm";
 import PushupsStats from "./components/PushupsStats";
@@ -9,6 +10,7 @@ import ForceGraphCanvas from "./graph/ForceGraphCanvas";
 
 import { loadLearnedSet, saveLearnedSet } from "./storage/learnedStore";
 import { computeGraphState } from "./graph/computeGraphState";
+import { validateOntology } from "./graph/ontology";
 
 export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -28,10 +30,8 @@ export default function App() {
     [computedNodes]
   );
 
-  //валидация для проверки дублей
   const validation = useMemo(() => validateOntology(forceGraphData), [forceGraphData]);
 
-  //результат валидации, сверяет с базой
   useEffect(() => {
     if (!validation.ok) {
       console.group("Ontology validation errors");
@@ -42,12 +42,20 @@ export default function App() {
     }
   }, [validation]);
 
-  const canLearn =
-    selectedNode &&
-    selectedNode.status !== "locked" &&
-    selectedNode.status !== "learned";
+  // views: bindsTo(nodeId) -> view
+  const viewByNodeId = useMemo(() => {
+    const map = new Map();
+    for (const v of views?.views || []) {
+      if (!v?.bindsTo) continue;
+      map.set(v.bindsTo, v);
+    }
+    return map;
+  }, []);
 
-  const SHOW_PUSHUPS_PANEL_NODE_ID = "pushups_dashboard";
+  const activeView = selectedNode ? viewByNodeId.get(selectedNode.id) : null;
+
+  const canLearn =
+    selectedNode && selectedNode.status !== "locked" && selectedNode.status !== "learned";
 
   return (
     <div
@@ -58,7 +66,7 @@ export default function App() {
         overflow: "hidden",
       }}
     >
-      {/* Левая панель */}
+      {/* LEFT: graph area */}
       <div
         style={{
           flex: 1,
@@ -72,12 +80,13 @@ export default function App() {
           <ForceGraphCanvas
             graph={forceGraphData}
             onNodeSelect={setSelectedNode}
+            selectedNodeId={selectedNode?.id}
             wheelSensitivity={10}
           />
         </div>
       </div>
 
-      {/* Правая панель */}
+      {/* RIGHT: panel */}
       <div
         style={{
           width: 360,
@@ -90,7 +99,6 @@ export default function App() {
           gap: 16,
         }}
       >
-        {/* показ ошибок в UI */}
         {!validation.ok && (
           <div style={{ padding: 12, background: "#fff3f3", border: "1px solid #ffd0d0" }}>
             <b>Ontology errors:</b>
@@ -105,10 +113,13 @@ export default function App() {
 
         {selectedNode ? (
           <div style={{ display: "grid", gap: 12 }}>
-            <h3 style={{ marginTop: 0 }}>{selectedNode.label}</h3>
+            <h3 style={{ marginTop: 0, marginBottom: 0 }}>{selectedNode.label}</h3>
 
             <p style={{ margin: 0 }}>
               <b>Тип:</b> {selectedNode.type}
+            </p>
+            <p style={{ margin: 0 }}>
+              <b>Kind:</b> {selectedNode.kind}
             </p>
             <p style={{ margin: 0 }}>
               <b>Статус:</b> {selectedNode.status}
@@ -148,7 +159,8 @@ export default function App() {
               </button>
             )}
 
-            {selectedNode.id === SHOW_PUSHUPS_PANEL_NODE_ID && (
+            {/* View binding: dashboard for node */}
+            {activeView?.id === "pushups_dashboard" && (
               <div style={{ display: "grid", gap: 16, marginTop: 8 }}>
                 <PushupsForm userId="arseniy" onCreated={() => setRefreshKey((k) => k + 1)} />
                 <PushupsStats userId="arseniy" refreshKey={refreshKey} />

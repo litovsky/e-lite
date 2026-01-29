@@ -1,0 +1,10 @@
+{
+  "views": [
+    {
+      "id": "pushups_dashboard",
+      "label": "Дашборд: отжимания",
+      "bindsTo": "pushups",
+      "component": "PushupsDashboard"
+    }
+  ]
+}
