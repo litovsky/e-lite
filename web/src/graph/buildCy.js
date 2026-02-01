@@ -166,6 +166,5 @@ export function buildCy({ container, nodes, edges, onNodeSelect }) {
 
   // чистим таймер при уничтожении инстанса (важно, иначе утечки)
   cy.on("destroy", () => stopFloat());
-
   return cy;
 }

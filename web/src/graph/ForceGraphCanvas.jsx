@@ -24,6 +24,7 @@ export default function ForceGraphCanvas({
     const wrap = wrapRef.current;
     if (!canvas || !wrap) return;
 
+    
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
