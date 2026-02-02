@@ -3,9 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import graph from "./data/graph.json";
 import views from "./data/views.json";
 
+import AuthPanel from "./components/AuthPanel";
+
 import PushupsForm from "./components/PushupsForm";
 import PushupsStats from "./components/PushupsStats";
 import ExerciseDashboard from "./components/ExerciseDashboard";
+
 import ForceGraphCanvas from "./graph/ForceGraphCanvas";
 
 import { loadLearnedSet, saveLearnedSet } from "./storage/learnedStore";
@@ -13,51 +16,61 @@ import { computeGraphState } from "./graph/computeGraphState";
 import { validateOntology } from "./graph/ontology";
 
 export default function App() {
+  const [user, setUser] = useState(null);
+
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedNode, setSelectedNode] = useState(null);
+
+  // пока user-state (learned) локальный; позже перенесем в БД по user.id
   const [learned, setLearned] = useState(() => loadLearnedSet());
 
   useEffect(() => {
     saveLearnedSet(learned);
   }, [learned]);
 
+  // userId для API упражнений (пока так)
+  const userId = user?.id || "guest";
+
   const { computedNodes, labelById } = useMemo(() => {
     return computeGraphState(graph, learned);
   }, [learned]);
 
-  const forceGraphData = useMemo(
+  const baseGraphData = useMemo(
     () => ({ nodes: computedNodes, edges: graph.edges }),
     [computedNodes]
   );
+
+  // overlay: добавляем tool-узлы и tool-рёбра из views.json (не трогаем онтологию)
   const graphWithTools = useMemo(() => {
-  const nodes = [...forceGraphData.nodes];
-  const edges = [...forceGraphData.edges];
+    const nodes = [...baseGraphData.nodes];
+    const edges = [...baseGraphData.edges];
 
-  for (const v of views.views || []) {
-    if (!v.bindsTo) continue;
+    for (const v of views?.views || []) {
+      if (!v?.bindsTo) continue;
 
-    const toolNodeId = `tool:${v.id}`;
+      const toolNodeId = `tool:${v.id}`;
 
-    nodes.push({
-      id: toolNodeId,
-      label: v.label ?? "Tool",
-      kind: "tool",
-      status: "tool",
-      isTool: true,
-    });
+      nodes.push({
+        id: toolNodeId,
+        label: v.label ?? "Tool",
+        kind: "tool",
+        status: "tool",
+        isTool: true,
+      });
 
-    edges.push({
-      id: `edge:${v.bindsTo}->${toolNodeId}`,
-      source: v.bindsTo,
-      target: toolNodeId,
-      rel: "tool",
-      isTool: true,
-    });
-  }
+      edges.push({
+        id: `edge:${v.bindsTo}->${toolNodeId}`,
+        source: v.bindsTo,
+        target: toolNodeId,
+        rel: "tool",
+        isTool: true,
+      });
+    }
 
-  return { nodes, edges };
-}, [forceGraphData]);
-  const validation = useMemo(() => validateOntology(forceGraphData), [forceGraphData]);
+    return { nodes, edges };
+  }, [baseGraphData]);
+
+  const validation = useMemo(() => validateOntology(baseGraphData), [baseGraphData]);
 
   useEffect(() => {
     if (!validation.ok) {
@@ -78,25 +91,27 @@ export default function App() {
     }
     return map;
   }, []);
+
+  // views: tool node id -> view
   const viewByToolNodeId = useMemo(() => {
-  const map = new Map();
-  for (const v of views?.views || []) {
-    const toolNodeId = `tool:${v.id}`;
-    map.set(toolNodeId, v);
-  }
-  return map;
-}, []);
+    const map = new Map();
+    for (const v of views?.views || []) {
+      const toolNodeId = `tool:${v.id}`;
+      map.set(toolNodeId, v);
+    }
+    return map;
+  }, []);
 
   const activeView = useMemo(() => {
-  if (!selectedNode) return null;
+    if (!selectedNode) return null;
 
-  // Если кликнули на tool-узел — берём view напрямую
-  const toolView = viewByToolNodeId.get(selectedNode.id);
-  if (toolView) return toolView;
+    // клик по tool-узлу
+    const toolView = viewByToolNodeId.get(selectedNode.id);
+    if (toolView) return toolView;
 
-  // Если кликнули на основной узел — берём view по bindsTo
-  return viewByNodeId.get(selectedNode.id) ?? null;
-}, [selectedNode, viewByNodeId, viewByToolNodeId]);
+    // клик по основному узлу
+    return viewByNodeId.get(selectedNode.id) ?? null;
+  }, [selectedNode, viewByNodeId, viewByToolNodeId]);
 
   const canLearn =
     selectedNode && selectedNode.status !== "locked" && selectedNode.status !== "learned";
@@ -110,7 +125,7 @@ export default function App() {
         overflow: "hidden",
       }}
     >
-      {/* LEFT: graph area */}
+      {/* LEFT: graph */}
       <div
         style={{
           flex: 1,
@@ -124,7 +139,6 @@ export default function App() {
           <ForceGraphCanvas
             graph={graphWithTools}
             onNodeSelect={setSelectedNode}
-            selectedNodeId={selectedNode?.id}
             wheelSensitivity={10}
           />
         </div>
@@ -133,7 +147,7 @@ export default function App() {
       {/* RIGHT: panel */}
       <div
         style={{
-          width: 360,
+          width: 380,
           height: "100vh",
           padding: 16,
           borderLeft: "1px solid #ddd",
@@ -143,37 +157,47 @@ export default function App() {
           gap: 16,
         }}
       >
+        {/* Auth */}
+        <AuthPanel onUser={setUser} />
+        <div style={{ fontSize: 12, color: "#666" }}>
+          Active user_id: <b>{userId}</b>
+        </div>
+
+        {/* Ontology validation errors */}
         {!validation.ok && (
           <div style={{ padding: 12, background: "#fff3f3", border: "1px solid #ffd0d0" }}>
             <b>Ontology errors:</b>
             <ul style={{ margin: "8px 0 0 18px" }}>
-              {validation.errors.slice(0, 8).map((e, i) => (
+              {validation.errors.slice(0, 10).map((e, i) => (
                 <li key={i}>{e}</li>
               ))}
             </ul>
-            {validation.errors.length > 8 && <div>…and more</div>}
+            {validation.errors.length > 10 && <div>…and more</div>}
           </div>
         )}
 
+        {/* Selected node */}
         {selectedNode ? (
           <div style={{ display: "grid", gap: 12 }}>
-            <h3 style={{ marginTop: 0, marginBottom: 0 }}>{selectedNode.label}</h3>
+            <h3 style={{ margin: 0 }}>{selectedNode.label}</h3>
 
-            <p style={{ margin: 0 }}>
-              <b>Тип:</b> {selectedNode.type}
-            </p>
-            <p style={{ margin: 0 }}>
-              <b>Kind:</b> {selectedNode.kind}
-            </p>
-            <p style={{ margin: 0 }}>
-              <b>Статус:</b> {selectedNode.status}
-            </p>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 13 }}>
+                <b>Type:</b> {selectedNode.type ?? "—"}
+              </div>
+              <div style={{ fontSize: 13 }}>
+                <b>Kind:</b> {selectedNode.kind ?? "—"}
+              </div>
+              <div style={{ fontSize: 13 }}>
+                <b>Status:</b> {selectedNode.status ?? "—"}
+              </div>
+            </div>
 
             {Array.isArray(selectedNode.requires) && selectedNode.requires.length > 0 && (
-              <>
-                <p style={{ margin: 0 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontSize: 13 }}>
                   <b>Требуется:</b>
-                </p>
+                </div>
                 <ul style={{ margin: 0, paddingLeft: 18 }}>
                   {selectedNode.requires.map((id) => (
                     <li key={id}>
@@ -181,13 +205,13 @@ export default function App() {
                     </li>
                   ))}
                 </ul>
-              </>
+              </div>
             )}
 
             {selectedNode.status === "locked" && (
-              <p style={{ color: "#666", margin: 0 }}>
+              <div style={{ fontSize: 13, color: "#666" }}>
                 Недоступно: сначала выполни prerequisites.
-              </p>
+              </div>
             )}
 
             {canLearn && (
@@ -203,17 +227,17 @@ export default function App() {
               </button>
             )}
 
-            {/* View binding: dashboard for node */}
+            {/* View binding */}
             {activeView?.id === "pushups_dashboard" && (
               <div style={{ display: "grid", gap: 16, marginTop: 8 }}>
-                <PushupsForm userId="arseniy" onCreated={() => setRefreshKey((k) => k + 1)} />
-                <PushupsStats userId="arseniy" refreshKey={refreshKey} />
-                <ExerciseDashboard userId="arseniy" refreshKey={refreshKey} />
+                <PushupsForm userId={userId} onCreated={() => setRefreshKey((k) => k + 1)} />
+                <PushupsStats userId={userId} refreshKey={refreshKey} />
+                <ExerciseDashboard userId={userId} refreshKey={refreshKey} />
               </div>
             )}
           </div>
         ) : (
-          <p>Кликни на узел</p>
+          <div style={{ color: "#666" }}>Кликни на узел</div>
         )}
       </div>
     </div>
