@@ -1,16 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-
+import { supabase } from "./supabaseClient";
 import graph from "./data/graph.json";
 import views from "./data/views.json";
-
 import AuthPanel from "./components/AuthPanel";
-
 import PushupsForm from "./components/PushupsForm";
 import PushupsStats from "./components/PushupsStats";
 import ExerciseDashboard from "./components/ExerciseDashboard";
-
 import ForceGraphCanvas from "./graph/ForceGraphCanvas";
-
 import { loadLearnedSet, saveLearnedSet } from "./storage/learnedStore";
 import { computeGraphState } from "./graph/computeGraphState";
 import { validateOntology } from "./graph/ontology";
@@ -25,8 +21,42 @@ export default function App() {
   const [learned, setLearned] = useState(() => loadLearnedSet());
 
   useEffect(() => {
-    saveLearnedSet(learned);
-  }, [learned]);
+  // guest — сохраняем локально
+  if (!user?.id) saveLearnedSet(learned);
+  }, [learned, user?.id]);
+
+  useEffect(() => {
+  let cancelled = false;
+
+  const loadFromDb = async () => {
+    if (!user?.id) {
+      // если разлогинились — возвращаемся к localStorage
+      setLearned(loadLearnedSet());
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("user_node_state")
+      .select("node_id")
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("Failed to load user_node_state:", error.message);
+      return;
+    }
+
+    if (cancelled) return;
+
+    const set = new Set((data || []).map((x) => x.node_id));
+    setLearned(set);
+  };
+
+  loadFromDb();
+
+  return () => {
+    cancelled = true;
+  };
+  }, [user?.id]);
 
   // userId для API упражнений (пока так)
   const userId = user?.id || "guest";
@@ -216,11 +246,31 @@ export default function App() {
 
             {canLearn && (
               <button
-                onClick={() => {
-                  const next = new Set(learned);
-                  next.add(selectedNode.id);
-                  setLearned(next);
-                  setSelectedNode({ ...selectedNode, status: "learned" });
+                onClick={async () => {
+  const nodeId = selectedNode.id;
+
+  // 1) Локально обновляем сразу (UI быстрый)
+  const next = new Set(learned);
+  next.add(nodeId);
+  setLearned(next);
+  setSelectedNode({ ...selectedNode, status: "learned" });
+
+  // 2) guest — только localStorage
+  if (!user?.id) return;
+
+  // 3) auth — пишем в БД
+  const { error } = await supabase.from("user_node_state").upsert(
+    {
+      user_id: user.id,
+      node_id: nodeId,
+      status: "learned",
+    },
+    { onConflict: "user_id,node_id" }
+  );
+
+  if (error) {
+    console.error("Failed to upsert user_node_state:", error.message);
+  }
                 }}
               >
                 Отметить как learned
