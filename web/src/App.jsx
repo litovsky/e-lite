@@ -187,7 +187,7 @@ export default function App() {
   const [pDomain, setPDomain] = useState("");
   const [pDesc, setPDesc] = useState("");
 
-  // NEW: bind fields
+  // bind fields
   const [pBindSource, setPBindSource] = useState("");
   const [pBindRel, setPBindRel] = useState("part_of");
 
@@ -204,6 +204,10 @@ export default function App() {
   const [nodeProposals, setNodeProposals] = useState([]);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalErr, setProposalErr] = useState("");
+
+  // NEW: votes state
+  const [voteCountsById, setVoteCountsById] = useState(new Map()); // id -> {up, down, score}
+  const [myVotesById, setMyVotesById] = useState(new Map()); // id -> 1/-1
 
   const loadNodeProposals = async () => {
     setProposalErr("");
@@ -225,10 +229,63 @@ export default function App() {
 
     if (error) {
       setProposalErr(error.message);
+      setNodeProposals([]);
+      setVoteCountsById(new Map());
+      setMyVotesById(new Map());
       return;
     }
 
-    setNodeProposals(data || []);
+    const list = data || [];
+    setNodeProposals(list);
+
+    // ---- NEW: load vote counts + my votes for the list ----
+    const ids = list.map((x) => x.id);
+    if (ids.length === 0) {
+      setVoteCountsById(new Map());
+      setMyVotesById(new Map());
+      return;
+    }
+
+    // 1) Aggregated counts via RPC
+    const { data: counts, error: countsErr } = await supabase.rpc(
+      "get_node_proposal_vote_counts",
+      { proposal_ids: ids }
+    );
+
+    if (countsErr) {
+      console.error("vote counts rpc error:", countsErr.message);
+      setVoteCountsById(new Map());
+    } else {
+      const m = new Map();
+      for (const c of counts || []) {
+        m.set(c.proposal_id, {
+          up: c.upvotes ?? 0,
+          down: c.downvotes ?? 0,
+          score: c.score ?? 0,
+        });
+      }
+      setVoteCountsById(m);
+    }
+
+    // 2) My votes (RLS allows only own)
+    if (user?.id) {
+      const { data: myVotes, error: myErr } = await supabase
+        .from("node_proposal_votes")
+        .select("proposal_id,vote")
+        .in("proposal_id", ids)
+        .eq("user_id", user.id);
+
+      if (myErr) {
+        console.error("my votes load error:", myErr.message);
+        setMyVotesById(new Map());
+      } else {
+        const mv = new Map();
+        for (const v of myVotes || []) mv.set(v.proposal_id, v.vote);
+        setMyVotesById(mv);
+      }
+    } else {
+      setMyVotesById(new Map());
+    }
   };
 
   useEffect(() => {
@@ -273,6 +330,47 @@ export default function App() {
     setPDesc("");
 
     // refresh list
+    loadNodeProposals();
+  };
+
+  // NEW: vote toggle
+  const toggleVote = async (proposalId, value) => {
+    if (!user?.id) {
+      setProposalErr("Нужно войти, чтобы голосовать.");
+      return;
+    }
+
+    const current = myVotesById.get(proposalId) ?? 0;
+
+    // same vote -> remove
+    if (current === value) {
+      const { error } = await supabase
+        .from("node_proposal_votes")
+        .delete()
+        .eq("proposal_id", proposalId)
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error("vote delete error:", error.message);
+        return;
+      }
+    } else {
+      const { error } = await supabase.from("node_proposal_votes").upsert(
+        {
+          proposal_id: proposalId,
+          user_id: user.id,
+          vote: value,
+        },
+        { onConflict: "proposal_id,user_id" }
+      );
+
+      if (error) {
+        console.error("vote upsert error:", error.message);
+        return;
+      }
+    }
+
+    // reload proposals+votes (simple & robust)
     loadNodeProposals();
   };
 
@@ -417,49 +515,85 @@ export default function App() {
             <div style={{ fontSize: 12, color: "#777" }}>Пока пусто.</div>
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
-              {nodeProposals.map((p) => (
-                <div
-                  key={p.id}
-                  style={{
-                    border: "1px solid #eee",
-                    padding: 10,
-                    borderRadius: 10,
-                    display: "grid",
-                    gap: 6,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <b style={{ fontSize: 13 }}>{p.label}</b>
-                    <span style={{ fontSize: 12, color: "#666" }}>{p.status}</span>
-                  </div>
+              {nodeProposals.map((p) => {
+                const counts = voteCountsById.get(p.id) || { up: 0, down: 0, score: 0 };
+                const myVote = myVotesById.get(p.id) || 0;
 
-                  <div style={{ fontSize: 12, color: "#444" }}>
-                    kind: <b>{p.kind}</b>
-                    {p.domain ? (
-                      <>
-                        {" "}
-                        • domain: <b>{p.domain}</b>
-                      </>
-                    ) : null}
-                  </div>
-
-                  <div style={{ fontSize: 12, color: "#444" }}>
-                    bind: <b>{p.bind_source_id || "—"}</b> • rel:{" "}
-                    <b>{p.bind_rel || "—"}</b>
-                  </div>
-
-                  {p.description && (
-                    <div style={{ fontSize: 12, color: "#555", whiteSpace: "pre-wrap" }}>
-                      {p.description}
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      border: "1px solid #eee",
+                      padding: 10,
+                      borderRadius: 10,
+                      display: "grid",
+                      gap: 6,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <b style={{ fontSize: 13 }}>{p.label}</b>
+                      <span style={{ fontSize: 12, color: "#666" }}>{p.status}</span>
                     </div>
-                  )}
 
-                  <div style={{ fontSize: 11, color: "#888" }}>
-                    {new Date(p.created_at).toLocaleString()} • by{" "}
-                    {String(p.user_id).slice(0, 8)}…
+                    <div style={{ fontSize: 12, color: "#444" }}>
+                      kind: <b>{p.kind}</b>
+                      {p.domain ? (
+                        <>
+                          {" "}
+                          • domain: <b>{p.domain}</b>
+                        </>
+                      ) : null}
+                    </div>
+
+                    <div style={{ fontSize: 12, color: "#444" }}>
+                      bind: <b>{p.bind_source_id || "—"}</b> • rel:{" "}
+                      <b>{p.bind_rel || "—"}</b>
+                    </div>
+
+                    {/* NEW: voting UI */}
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+                      <button
+                        onClick={() => toggleVote(p.id, 1)}
+                        style={{
+                          padding: "6px 10px",
+                          border: "1px solid #ddd",
+                          background: myVote === 1 ? "#e8f5e9" : "#fff",
+                        }}
+                        title="Upvote"
+                      >
+                        👍 {counts.up}
+                      </button>
+
+                      <button
+                        onClick={() => toggleVote(p.id, -1)}
+                        style={{
+                          padding: "6px 10px",
+                          border: "1px solid #ddd",
+                          background: myVote === -1 ? "#ffebee" : "#fff",
+                        }}
+                        title="Downvote"
+                      >
+                        👎 {counts.down}
+                      </button>
+
+                      <div style={{ fontSize: 12, color: "#666" }}>
+                        score: <b>{counts.score}</b>
+                      </div>
+                    </div>
+
+                    {p.description && (
+                      <div style={{ fontSize: 12, color: "#555", whiteSpace: "pre-wrap" }}>
+                        {p.description}
+                      </div>
+                    )}
+
+                    <div style={{ fontSize: 11, color: "#888" }}>
+                      {new Date(p.created_at).toLocaleString()} • by{" "}
+                      {String(p.user_id).slice(0, 8)}…
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
