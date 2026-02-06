@@ -63,6 +63,67 @@ export default function App() {
     };
   }, [user?.id]);
 
+  /* ================= ACCEPTED OVERLAY (DB → GRAPH) ================= */
+
+  // сюда складываем принятые узлы/ребра, чтобы подмешать в seed graph
+  const [acceptedOverlay, setAcceptedOverlay] = useState({ nodes: [], edges: [] });
+
+  const loadAcceptedOverlay = async () => {
+    const { data, error } = await supabase
+      .from("node_proposals")
+      .select(
+        "id, label, kind, domain, description, status, bind_source_id, bind_rel, created_at"
+      )
+      .eq("status", "accepted")
+      // decided_at может не быть — поэтому сортируем по created_at
+      .order("created_at", { ascending: false })
+      .limit(300);
+
+    if (error) {
+      console.error("Failed to load accepted proposals:", error.message);
+      return;
+    }
+
+    const acc = data || [];
+    const nodes = [];
+    const edges = [];
+
+    for (const p of acc) {
+      const nodeId = `p:${p.id}`; // стабильный id в графе
+
+      nodes.push({
+        id: nodeId,
+        label: p.label,
+        kind: p.kind || "skill",
+        // статус можно выбрать любой. Я ставлю unlocked, чтобы он был виден
+        status: "unlocked",
+        domain: p.domain || undefined,
+        description: p.description || undefined,
+        isProposal: true,
+        proposalId: p.id,
+      });
+
+      if (p.bind_source_id) {
+        edges.push({
+          id: `edge:${p.bind_source_id}->${nodeId}`,
+          source: p.bind_source_id,
+          target: nodeId,
+          rel: p.bind_rel || "part_of",
+          isProposal: true,
+          proposalId: p.id,
+        });
+      }
+    }
+
+    setAcceptedOverlay({ nodes, edges });
+  };
+
+  // загрузка принятых узлов при старте/логине
+  useEffect(() => {
+    loadAcceptedOverlay();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
   /* ================= GRAPH ================= */
 
   const { computedNodes, labelById } = useMemo(
@@ -75,11 +136,16 @@ export default function App() {
     [computedNodes]
   );
 
-  // overlay: tool nodes/edges from views.json
+  // overlay: tool nodes/edges from views.json + accepted proposals overlay
   const graphWithTools = useMemo(() => {
     const nodes = [...baseGraphData.nodes];
     const edges = [...baseGraphData.edges];
 
+    // 1) accepted proposals (DB)
+    for (const n of acceptedOverlay.nodes) nodes.push(n);
+    for (const e of acceptedOverlay.edges) edges.push(e);
+
+    // 2) tools overlay (views.json)
     for (const v of views?.views || []) {
       if (!v?.id || !v?.bindsTo) continue;
 
@@ -103,7 +169,7 @@ export default function App() {
     }
 
     return { nodes, edges };
-  }, [baseGraphData]);
+  }, [baseGraphData, acceptedOverlay]);
 
   const validation = useMemo(() => validateOntology(baseGraphData), [baseGraphData]);
 
@@ -205,7 +271,7 @@ export default function App() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalErr, setProposalErr] = useState("");
 
-  // NEW: votes state
+  // votes state
   const [voteCountsById, setVoteCountsById] = useState(new Map()); // id -> {up, down, score}
   const [myVotesById, setMyVotesById] = useState(new Map()); // id -> 1/-1
 
@@ -238,7 +304,6 @@ export default function App() {
     const list = data || [];
     setNodeProposals(list);
 
-    // ---- NEW: load vote counts + my votes for the list ----
     const ids = list.map((x) => x.id);
     if (ids.length === 0) {
       setVoteCountsById(new Map());
@@ -329,11 +394,12 @@ export default function App() {
     setPDomain("");
     setPDesc("");
 
-    // refresh list
     loadNodeProposals();
+    // на случай если ты создаешь accepted вручную/скриптом — обновим overlay тоже
+    loadAcceptedOverlay();
   };
 
-  // NEW: vote toggle
+  // vote toggle
   const toggleVote = async (proposalId, value) => {
     if (!user?.id) {
       setProposalErr("Нужно войти, чтобы голосовать.");
@@ -370,8 +436,12 @@ export default function App() {
       }
     }
 
-    // reload proposals+votes (simple & robust)
-    loadNodeProposals();
+    // reload proposals+votes
+    await loadNodeProposals();
+
+    // IMPORTANT: after vote, proposal may auto-switch to accepted by trigger
+    // so refresh accepted overlay so node appears in graph
+    await loadAcceptedOverlay();
   };
 
   /* ================= RENDER ================= */
@@ -550,7 +620,7 @@ export default function App() {
                       <b>{p.bind_rel || "—"}</b>
                     </div>
 
-                    {/* NEW: voting UI */}
+                    {/* voting UI */}
                     <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
                       <button
                         onClick={() => toggleVote(p.id, 1)}
