@@ -65,7 +65,6 @@ export default function App() {
 
   /* ================= ACCEPTED OVERLAY (DB → GRAPH) ================= */
 
-  // сюда складываем принятые узлы/ребра, чтобы подмешать в seed graph
   const [acceptedOverlay, setAcceptedOverlay] = useState({ nodes: [], edges: [] });
 
   const loadAcceptedOverlay = async () => {
@@ -75,7 +74,6 @@ export default function App() {
         "id, label, kind, domain, description, status, bind_source_id, bind_rel, created_at"
       )
       .eq("status", "accepted")
-      // decided_at может не быть — поэтому сортируем по created_at
       .order("created_at", { ascending: false })
       .limit(300);
 
@@ -89,13 +87,13 @@ export default function App() {
     const edges = [];
 
     for (const p of acc) {
-      const nodeId = `p:${p.id}`; // стабильный id в графе
+      const nodeId = `p:${p.id}`;
 
       nodes.push({
         id: nodeId,
         label: p.label,
         kind: p.kind || "skill",
-        // статус можно выбрать любой. Я ставлю unlocked, чтобы он был виден
+        // базовый статус; итоговый статус мы будем "перекрывать" через learned-set в graphWithTools
         status: "unlocked",
         domain: p.domain || undefined,
         description: p.description || undefined,
@@ -118,7 +116,6 @@ export default function App() {
     setAcceptedOverlay({ nodes, edges });
   };
 
-  // загрузка принятых узлов при старте/логине
   useEffect(() => {
     loadAcceptedOverlay();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -136,13 +133,18 @@ export default function App() {
     [computedNodes]
   );
 
-  // overlay: tool nodes/edges from views.json + accepted proposals overlay
   const graphWithTools = useMemo(() => {
     const nodes = [...baseGraphData.nodes];
     const edges = [...baseGraphData.edges];
 
-    // 1) accepted proposals (DB)
-    for (const n of acceptedOverlay.nodes) nodes.push(n);
+    // 1) accepted proposals (DB) — ВАЖНО: подмешиваем learned-статус
+    for (const n of acceptedOverlay.nodes) {
+      const isLearned = learned.has(n.id);
+      nodes.push({
+        ...n,
+        status: isLearned ? "learned" : n.status,
+      });
+    }
     for (const e of acceptedOverlay.edges) edges.push(e);
 
     // 2) tools overlay (views.json)
@@ -169,7 +171,7 @@ export default function App() {
     }
 
     return { nodes, edges };
-  }, [baseGraphData, acceptedOverlay]);
+  }, [baseGraphData, acceptedOverlay, learned]);
 
   const validation = useMemo(() => validateOntology(baseGraphData), [baseGraphData]);
 
@@ -203,18 +205,24 @@ export default function App() {
 
   /* ================= LEARN ================= */
 
+  // ВАЖНО: learned для overlay определяется по learned.has(), а не по selectedNode.status
+  const isSelectedLearned = selectedNode ? learned.has(selectedNode.id) : false;
+
   const canLearn =
-    selectedNode && selectedNode.status !== "locked" && selectedNode.status !== "learned";
+    selectedNode &&
+    selectedNode.status !== "locked" &&
+    !learned.has(selectedNode.id);
 
   const learnSelectedNode = async () => {
     if (!selectedNode) return;
     const nodeId = selectedNode.id;
 
+    if (learned.has(nodeId)) return;
+
     // UI fast
     const next = new Set(learned);
     next.add(nodeId);
     setLearned(next);
-    setSelectedNode({ ...selectedNode, status: "learned" });
 
     if (!user?.id) return;
 
@@ -229,6 +237,8 @@ export default function App() {
   const unlearnSelectedNode = async () => {
     if (!selectedNode) return;
     const nodeId = selectedNode.id;
+
+    if (!learned.has(nodeId)) return;
 
     const next = new Set(learned);
     next.delete(nodeId);
@@ -253,13 +263,11 @@ export default function App() {
   const [pDomain, setPDomain] = useState("");
   const [pDesc, setPDesc] = useState("");
 
-  // bind fields
   const [pBindSource, setPBindSource] = useState("");
   const [pBindRel, setPBindRel] = useState("part_of");
 
   const [pMsg, setPMsg] = useState("");
 
-  // auto-set bind_source_id = selectedNode.id
   useEffect(() => {
     if (selectedNode?.id) setPBindSource(selectedNode.id);
   }, [selectedNode?.id]);
@@ -271,9 +279,8 @@ export default function App() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalErr, setProposalErr] = useState("");
 
-  // votes state
-  const [voteCountsById, setVoteCountsById] = useState(new Map()); // id -> {up, down, score}
-  const [myVotesById, setMyVotesById] = useState(new Map()); // id -> 1/-1
+  const [voteCountsById, setVoteCountsById] = useState(new Map());
+  const [myVotesById, setMyVotesById] = useState(new Map());
 
   const loadNodeProposals = async () => {
     setProposalErr("");
@@ -311,7 +318,6 @@ export default function App() {
       return;
     }
 
-    // 1) Aggregated counts via RPC
     const { data: counts, error: countsErr } = await supabase.rpc(
       "get_node_proposal_vote_counts",
       { proposal_ids: ids }
@@ -332,7 +338,6 @@ export default function App() {
       setVoteCountsById(m);
     }
 
-    // 2) My votes (RLS allows only own)
     if (user?.id) {
       const { data: myVotes, error: myErr } = await supabase
         .from("node_proposal_votes")
@@ -377,7 +382,6 @@ export default function App() {
       kind: pKind,
       domain: pDomain.trim() || null,
       description: pDesc.trim() || null,
-
       bind_source_id: pBindSource.trim() || null,
       bind_rel: pBindRel,
     };
@@ -394,12 +398,10 @@ export default function App() {
     setPDomain("");
     setPDesc("");
 
-    loadNodeProposals();
-    // на случай если ты создаешь accepted вручную/скриптом — обновим overlay тоже
-    loadAcceptedOverlay();
+    await loadNodeProposals();
+    await loadAcceptedOverlay();
   };
 
-  // vote toggle
   const toggleVote = async (proposalId, value) => {
     if (!user?.id) {
       setProposalErr("Нужно войти, чтобы голосовать.");
@@ -408,7 +410,6 @@ export default function App() {
 
     const current = myVotesById.get(proposalId) ?? 0;
 
-    // same vote -> remove
     if (current === value) {
       const { error } = await supabase
         .from("node_proposal_votes")
@@ -436,11 +437,7 @@ export default function App() {
       }
     }
 
-    // reload proposals+votes
     await loadNodeProposals();
-
-    // IMPORTANT: after vote, proposal may auto-switch to accepted by trigger
-    // so refresh accepted overlay so node appears in graph
     await loadAcceptedOverlay();
   };
 
@@ -620,7 +617,6 @@ export default function App() {
                       <b>{p.bind_rel || "—"}</b>
                     </div>
 
-                    {/* voting UI */}
                     <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
                       <button
                         onClick={() => toggleVote(p.id, 1)}
@@ -694,7 +690,12 @@ export default function App() {
                 <b>Kind:</b> {selectedNode.kind ?? "—"}
               </div>
               <div style={{ fontSize: 13 }}>
-                <b>Status:</b> {selectedNode.status ?? "—"}
+                <b>Status:</b>{" "}
+                {selectedNode.status === "locked"
+                  ? "locked"
+                  : isSelectedLearned
+                    ? "learned"
+                    : selectedNode.status ?? "—"}
               </div>
             </div>
 
@@ -721,9 +722,7 @@ export default function App() {
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {canLearn && <button onClick={learnSelectedNode}>Отметить как learned</button>}
-              {selectedNode.status === "learned" && (
-                <button onClick={unlearnSelectedNode}>Unlearn</button>
-              )}
+              {isSelectedLearned && <button onClick={unlearnSelectedNode}>Unlearn</button>}
             </div>
 
             {/* View binding */}
