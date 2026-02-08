@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 
-import graph from "./data/graph.json";
+import seedGraph from "./data/graph.json";
 import views from "./data/views.json";
 
 import AuthPanel from "./components/AuthPanel";
@@ -63,16 +63,84 @@ export default function App() {
     };
   }, [user?.id]);
 
-  /* ================= ACCEPTED OVERLAY (DB → GRAPH) ================= */
+  /* ================= ONTOLOGY CANON (Supabase → base graph) ================= */
+
+  const [canonGraph, setCanonGraph] = useState(null); // {nodes, edges} or null
+  const [canonLoading, setCanonLoading] = useState(false);
+  const [canonErr, setCanonErr] = useState("");
+
+  const loadCanonGraph = useCallback(async () => {
+    setCanonErr("");
+    setCanonLoading(true);
+
+    // 1) nodes
+    const { data: nData, error: nErr } = await supabase
+      .from("ontology_nodes")
+      .select("id,label,kind,domain,description")
+      .limit(2000);
+
+    if (nErr) {
+      setCanonLoading(false);
+      setCanonErr(nErr.message);
+      setCanonGraph(null);
+      return;
+    }
+
+    // 2) edges
+    const { data: eData, error: eErr } = await supabase
+      .from("ontology_edges")
+      .select("id,source_id,target_id,rel")
+      .limit(4000);
+
+    setCanonLoading(false);
+
+    if (eErr) {
+      setCanonErr(eErr.message);
+      setCanonGraph(null);
+      return;
+    }
+
+    const nodes = (nData || []).map((n) => ({
+      id: n.id,
+      label: n.label,
+      kind: n.kind ?? "skill",
+      domain: n.domain ?? undefined,
+      description: n.description ?? undefined,
+      // статус вычислим позже через computeGraphState + learned overlay
+    }));
+
+    const edges = (eData || []).map((e) => ({
+      id: e.id || `edge:${e.source_id}->${e.target_id}:${e.rel || "part_of"}`,
+      source: e.source_id,
+      target: e.target_id,
+      rel: e.rel || "part_of",
+      isCanon: true,
+    }));
+
+    // если канон пустой — оставим null, чтобы использовать seedGraph
+    if (nodes.length === 0) {
+      setCanonGraph(null);
+      return;
+    }
+
+    setCanonGraph({ nodes, edges });
+  }, []);
+
+  // загружаем канон при старте (не зависит от user)
+  useEffect(() => {
+    loadCanonGraph();
+  }, [loadCanonGraph]);
+
+  /* ================= ACCEPTED OVERLAY (node_proposals accepted) =================
+     Это временно: пока нет триггера, который переносит accepted → ontology_nodes/edges.
+  */
 
   const [acceptedOverlay, setAcceptedOverlay] = useState({ nodes: [], edges: [] });
 
-  const loadAcceptedOverlay = async () => {
+  const loadAcceptedOverlay = useCallback(async () => {
     const { data, error } = await supabase
       .from("node_proposals")
-      .select(
-        "id, label, kind, domain, description, status, bind_source_id, bind_rel, created_at"
-      )
+      .select("id,label,kind,domain,description,status,bind_source_id,bind_rel,created_at")
       .eq("status", "accepted")
       .order("created_at", { ascending: false })
       .limit(300);
@@ -87,13 +155,12 @@ export default function App() {
     const edges = [];
 
     for (const p of acc) {
-      const nodeId = `p:${p.id}`;
+      const nodeId = `p:${p.id}`; // стабильный id overlay-узла
 
       nodes.push({
         id: nodeId,
         label: p.label,
         kind: p.kind || "skill",
-        // базовый статус; итоговый статус мы будем "перекрывать" через learned-set в graphWithTools
         status: "unlocked",
         domain: p.domain || undefined,
         description: p.description || undefined,
@@ -114,40 +181,43 @@ export default function App() {
     }
 
     setAcceptedOverlay({ nodes, edges });
-  };
+  }, []);
 
   useEffect(() => {
     loadAcceptedOverlay();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [loadAcceptedOverlay, user?.id]);
 
-  /* ================= GRAPH ================= */
+  /* ================= GRAPH BASE ================= */
 
+  // выбираем базу: канон из supabase или seedGraph.json
+  const baseSourceGraph = useMemo(() => {
+    return canonGraph ?? seedGraph;
+  }, [canonGraph]);
+
+  // computeGraphState должен получать объект формата: {nodes, edges}
   const { computedNodes, labelById } = useMemo(
-    () => computeGraphState(graph, learned),
-    [learned]
+    () => computeGraphState(baseSourceGraph, learned),
+    [baseSourceGraph, learned]
   );
 
   const baseGraphData = useMemo(
-    () => ({ nodes: computedNodes, edges: graph.edges }),
-    [computedNodes]
+    () => ({ nodes: computedNodes, edges: baseSourceGraph.edges }),
+    [computedNodes, baseSourceGraph.edges]
   );
 
+  // tools overlay + accepted overlay (и learned перекрываем для overlay)
   const graphWithTools = useMemo(() => {
     const nodes = [...baseGraphData.nodes];
     const edges = [...baseGraphData.edges];
 
-    // 1) accepted proposals (DB) — ВАЖНО: подмешиваем learned-статус
+    // accepted proposals overlay (временно)
     for (const n of acceptedOverlay.nodes) {
       const isLearned = learned.has(n.id);
-      nodes.push({
-        ...n,
-        status: isLearned ? "learned" : n.status,
-      });
+      nodes.push({ ...n, status: isLearned ? "learned" : n.status });
     }
     for (const e of acceptedOverlay.edges) edges.push(e);
 
-    // 2) tools overlay (views.json)
+    // tools overlay (views.json)
     for (const v of views?.views || []) {
       if (!v?.id || !v?.bindsTo) continue;
 
@@ -205,7 +275,6 @@ export default function App() {
 
   /* ================= LEARN ================= */
 
-  // ВАЖНО: learned для overlay определяется по learned.has(), а не по selectedNode.status
   const isSelectedLearned = selectedNode ? learned.has(selectedNode.id) : false;
 
   const canLearn =
@@ -216,10 +285,8 @@ export default function App() {
   const learnSelectedNode = async () => {
     if (!selectedNode) return;
     const nodeId = selectedNode.id;
-
     if (learned.has(nodeId)) return;
 
-    // UI fast
     const next = new Set(learned);
     next.add(nodeId);
     setLearned(next);
@@ -237,7 +304,6 @@ export default function App() {
   const unlearnSelectedNode = async () => {
     if (!selectedNode) return;
     const nodeId = selectedNode.id;
-
     if (!learned.has(nodeId)) return;
 
     const next = new Set(learned);
@@ -282,15 +348,13 @@ export default function App() {
   const [voteCountsById, setVoteCountsById] = useState(new Map());
   const [myVotesById, setMyVotesById] = useState(new Map());
 
-  const loadNodeProposals = async () => {
+  const loadNodeProposals = useCallback(async () => {
     setProposalErr("");
     setProposalLoading(true);
 
     let q = supabase
       .from("node_proposals")
-      .select(
-        "id, label, kind, domain, description, status, bind_source_id, bind_rel, user_id, created_at"
-      )
+      .select("id,label,kind,domain,description,status,bind_source_id,bind_rel,user_id,created_at")
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -356,12 +420,11 @@ export default function App() {
     } else {
       setMyVotesById(new Map());
     }
-  };
+  }, [proposalStatusFilter, user?.id]);
 
   useEffect(() => {
     loadNodeProposals();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proposalStatusFilter, user?.id]);
+  }, [loadNodeProposals]);
 
   const submitNodeProposal = async () => {
     setPMsg("");
@@ -423,11 +486,7 @@ export default function App() {
       }
     } else {
       const { error } = await supabase.from("node_proposal_votes").upsert(
-        {
-          proposal_id: proposalId,
-          user_id: user.id,
-          vote: value,
-        },
+        { proposal_id: proposalId, user_id: user.id, vote: value },
         { onConflict: "proposal_id,user_id" }
       );
 
@@ -439,29 +498,17 @@ export default function App() {
 
     await loadNodeProposals();
     await loadAcceptedOverlay();
+
+    // если у тебя уже появится триггер "accepted → ontology_*", граф начнет появляться из канона
+    await loadCanonGraph();
   };
 
   /* ================= RENDER ================= */
 
   return (
-    <div
-      style={{
-        height: "100vh",
-        width: "100vw",
-        display: "flex",
-        overflow: "hidden",
-      }}
-    >
+    <div style={{ height: "100vh", width: "100vw", display: "flex", overflow: "hidden" }}>
       {/* LEFT: graph */}
-      <div
-        style={{
-          flex: 1,
-          background: "#f5f5f5",
-          position: "relative",
-          height: "100vh",
-          overflow: "hidden",
-        }}
-      >
+      <div style={{ flex: 1, background: "#f5f5f5", position: "relative", height: "100vh", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0 }}>
           <ForceGraphCanvas
             graph={graphWithTools}
@@ -488,6 +535,18 @@ export default function App() {
         <AuthPanel onUser={setUser} />
         <div style={{ fontSize: 12, color: "#666" }}>
           Active user_id: <b>{userId}</b>
+        </div>
+
+        {/* Canon status */}
+        <div style={{ fontSize: 12, color: "#666", display: "grid", gap: 8 }}>
+          <div>
+            Ontology source:{" "}
+            <b>{canonGraph ? "Supabase (ontology_*)" : "local seedGraph (graph.json)"}</b>
+          </div>
+          {canonErr && <div style={{ color: "#b00020" }}>canon error: {canonErr}</div>}
+          <button onClick={loadCanonGraph} disabled={canonLoading}>
+            {canonLoading ? "Loading..." : "Reload canon"}
+          </button>
         </div>
 
         {/* Proposals */}
@@ -606,15 +665,13 @@ export default function App() {
                       kind: <b>{p.kind}</b>
                       {p.domain ? (
                         <>
-                          {" "}
-                          • domain: <b>{p.domain}</b>
+                          {" "}• domain: <b>{p.domain}</b>
                         </>
                       ) : null}
                     </div>
 
                     <div style={{ fontSize: 12, color: "#444" }}>
-                      bind: <b>{p.bind_source_id || "—"}</b> • rel:{" "}
-                      <b>{p.bind_rel || "—"}</b>
+                      bind: <b>{p.bind_source_id || "—"}</b> • rel: <b>{p.bind_rel || "—"}</b>
                     </div>
 
                     <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
@@ -654,8 +711,7 @@ export default function App() {
                     )}
 
                     <div style={{ fontSize: 11, color: "#888" }}>
-                      {new Date(p.created_at).toLocaleString()} • by{" "}
-                      {String(p.user_id).slice(0, 8)}…
+                      {new Date(p.created_at).toLocaleString()} • by {String(p.user_id).slice(0, 8)}…
                     </div>
                   </div>
                 );
@@ -683,12 +739,8 @@ export default function App() {
             <h3 style={{ margin: 0 }}>{selectedNode.label}</h3>
 
             <div style={{ display: "grid", gap: 6 }}>
-              <div style={{ fontSize: 13 }}>
-                <b>Type:</b> {selectedNode.type ?? "—"}
-              </div>
-              <div style={{ fontSize: 13 }}>
-                <b>Kind:</b> {selectedNode.kind ?? "—"}
-              </div>
+              <div style={{ fontSize: 13 }}><b>Type:</b> {selectedNode.type ?? "—"}</div>
+              <div style={{ fontSize: 13 }}><b>Kind:</b> {selectedNode.kind ?? "—"}</div>
               <div style={{ fontSize: 13 }}>
                 <b>Status:</b>{" "}
                 {selectedNode.status === "locked"
@@ -701,9 +753,7 @@ export default function App() {
 
             {Array.isArray(selectedNode.requires) && selectedNode.requires.length > 0 && (
               <div style={{ display: "grid", gap: 6 }}>
-                <div style={{ fontSize: 13 }}>
-                  <b>Требуется:</b>
-                </div>
+                <div style={{ fontSize: 13 }}><b>Требуется:</b></div>
                 <ul style={{ margin: 0, paddingLeft: 18 }}>
                   {selectedNode.requires.map((id) => (
                     <li key={id}>
@@ -725,7 +775,6 @@ export default function App() {
               {isSelectedLearned && <button onClick={unlearnSelectedNode}>Unlearn</button>}
             </div>
 
-            {/* View binding */}
             {activeView?.id === "pushups_dashboard" && (
               <div style={{ display: "grid", gap: 16, marginTop: 8 }}>
                 <PushupsForm userId={userId} onCreated={() => setRefreshKey((k) => k + 1)} />
