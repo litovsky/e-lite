@@ -16,6 +16,7 @@ export const NODE_KIND = /** @type {const} */ ({
   ACTION: "action",
   METRIC: "metric",
   TOOL: "tool",
+  CONCEPT: "concept",
 });
 
 export function makeNode({ id, label, kind, domain, description, tags }) {

@@ -1,20 +1,30 @@
 {
   "nodes": [
-    { "id": "surviving", "label": "Surviving", "type": "core", "kind": "core", "status": "base" },
+    { "id": "survival", "label": "Выживание", "kind": "core" },
 
-    { "id": "intellect", "label": "Интеллект", "type": "domain", "kind": "domain", "status": "base" },
-    { "id": "python", "label": "Изучение Python", "type": "skill", "kind": "skill", "status": "base"},
-    { "id": "fastapi", "label": "FastAPI", "type": "framework", "kind": "tool", "status": "base"},
+    { "id": "autopoiesis", "label": "Автопоэзис (самоподдержание)", "kind": "domain" },
+    { "id": "replication", "label": "Самокопирование", "kind": "domain" },
 
-    { "id": "physical_activity", "label": "Физическая активность", "type": "domain", "kind": "domain", "status": "base" },
-    { "id": "pushups", "label": "Отжимания", "type": "skill", "kind": "skill", "status": "base"}
+    { "id": "dna", "label": "ДНК", "kind": "concept", "domain": "replication" },
+
+    { "id": "energy", "label": "Энергия", "kind": "domain" },
+    { "id": "metabolism", "label": "Метаболизм (обмен веществ)", "kind": "concept", "domain": "energy" },
+
+    { "id": "homeostasis", "label": "Гомеостаз", "kind": "concept", "domain": "autopoiesis" },
+
+    { "id": "health", "label": "Здоровье", "kind": "domain" }
   ],
   "edges": [
-    { "id": "e1", "source": "intellect", "target": "surviving", "label": "поддерживает", "type": "supports", "rel": "supports" },
-    { "id": "e2", "source": "python", "target": "intellect", "label": "ветка", "type": "branch", "rel": "part_of" },
-    { "id": "e3", "source": "intellect", "target": "python", "label": "requires", "type": "requires", "rel": "requires" },
-    { "id": "e4", "source": "fastapi", "target": "python", "label": "requires", "type": "requires", "rel": "requires" },
-    { "id": "e5", "source": "physical_activity", "target": "surviving", "label": "поддерживает", "type": "supports", "rel": "supports" },
-    { "id": "e6", "source": "pushups", "target": "physical_activity", "label": "requires", "type": "requires", "rel": "requires" }
+    { "id": "e1", "source": "autopoiesis", "target": "survival", "rel": "supports" },
+    { "id": "e2", "source": "replication", "target": "survival", "rel": "supports" },
+
+    { "id": "e3", "source": "dna", "target": "replication", "rel": "part_of" },
+
+    { "id": "e4", "source": "energy", "target": "autopoiesis", "rel": "supports" },
+    { "id": "e5", "source": "metabolism", "target": "energy", "rel": "part_of" },
+
+    { "id": "e6", "source": "homeostasis", "target": "autopoiesis", "rel": "part_of" },
+
+    { "id": "e7", "source": "health", "target": "survival", "rel": "supports" }
   ]
 }

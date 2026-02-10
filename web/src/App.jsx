@@ -267,30 +267,39 @@ export default function App() {
       const isLearned = learned.has(n.id);
       nodes.push({ ...n, status: isLearned ? "learned" : n.status });
     }
-    for (const e of acceptedOverlay.edges) edges.push(e);
+    const nodeIdSet = new Set(nodes.map((n) => n.id));
 
-    // tools overlay (views.json)
-    for (const v of views?.views || []) {
-      if (!v?.id || !v?.bindsTo) continue;
+for (const v of views?.views || []) {
+  if (!v?.id || !v?.bindsTo) continue;
 
-      const toolNodeId = `tool:${v.id}`;
+  const toolNodeId = `tool:${v.id}`;
 
-      nodes.push({
-        id: toolNodeId,
-        label: v.label ?? "Tool",
-        kind: "tool",
-        isTool: true,
-        status: "tool",
-      });
+  // bindsTo может быть строкой или массивом — нормализуем
+  const binds = Array.isArray(v.bindsTo) ? v.bindsTo : [v.bindsTo];
 
-      edges.push({
-        id: `edge:${v.bindsTo}->${toolNodeId}`,
-        source: v.bindsTo,
-        target: toolNodeId,
-        rel: "tool",
-        isTool: true,
-      });
-    }
+  // оставляем только те привязки, которые реально существуют в графе
+  const validBinds = binds.filter((bindId) => nodeIdSet.has(bindId));
+
+  // если ни одной валидной привязки нет — вообще не добавляем tool-ноду
+  if (validBinds.length === 0) continue;
+
+  nodes.push({
+    id: toolNodeId,
+    label: v.label ?? "Tool",
+    kind: "tool",
+  });
+
+  nodeIdSet.add(toolNodeId);
+
+  for (const bindId of validBinds) {
+    edges.push({
+      id: `tool:${v.id}->${bindId}`,
+      source: toolNodeId,
+      target: bindId,
+      rel: "tool",
+    });
+  }
+}
 
     return { nodes, edges };
   }, [baseGraphData, acceptedOverlay, learned]);
