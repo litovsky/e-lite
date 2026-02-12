@@ -507,7 +507,19 @@ for (const v of views?.views || []) {
       bind_source_id: pBindSource.trim() || null,
       bind_rel: pBindRel,
     };
+// --- ROOT GUARD (v0.1) ---
+// корневые узлы (на этом уровне не хотим "бег/отжимания/инструменты")
+const ROOT_IDS = new Set(["survival", "autopoiesis", "replication", "energy"]);
 
+// "низовые" типы: методы/действия/инструменты/метрики/навыки
+const LOW_KINDS = new Set(["skill", "action", "tool", "metric"]);
+
+// если пытаются привязать низовой узел прямо к корню — блокируем
+const bindId = pBindSource.trim() || "";
+if (LOW_KINDS.has(pKind) && ROOT_IDS.has(bindId)) {
+  setPMsg("Нельзя привязывать skill/action/tool/metric напрямую к корню (Выживание/Автопоэзис/Самокопирование/Энергия). Привяжи к 'Здоровье' или к домену ниже.");
+  return;
+}
     const { error } = await supabase.from("node_proposals").insert(payload);
 
     if (error) {
