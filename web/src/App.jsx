@@ -601,10 +601,6 @@ if (LOW_KINDS.has(pKind) && ROOT_IDS.has(bindId)) {
   {/* 1. Account */}
   <div style={{ display: "grid", gap: 10 }}>
     <AuthPanel onUser={setUser} />
-
-    <div style={{ fontSize: 11, color: "#888" }}>
-      user_id: <b>{userId}</b>
-    </div>
   </div>
 
   {/* 2. Selected node inspector */}
