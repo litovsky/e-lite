@@ -584,265 +584,300 @@ if (LOW_KINDS.has(pKind) && ROOT_IDS.has(bindId)) {
         </div>
       </div>
 
-      {/* RIGHT: panel */}
-      <div
-        style={{
-          width: 420,
-          height: "100vh",
-          padding: 16,
-          borderLeft: "1px solid #ddd",
-          background: "#fff",
-          overflow: "auto",
-          display: "grid",
-          gap: 16,
-        }}
-      >
-        <AuthPanel onUser={setUser} />
+{/* RIGHT: panel */}
+<div
+  style={{
+    width: 420,
+    height: "100vh",
+    padding: 16,
+    borderLeft: "1px solid #ddd",
+    background: "#fff",
+    overflow: "auto",
+    display: "grid",
+    gap: 16,
+    alignContent: "start",
+  }}
+>
+  {/* 1. Account */}
+  <div style={{ display: "grid", gap: 10 }}>
+    <AuthPanel onUser={setUser} />
 
-        <div style={{ fontSize: 12, color: "#666" }}>
-          Active user_id: <b>{userId}</b>
+    <div style={{ fontSize: 11, color: "#888" }}>
+      user_id: <b>{userId}</b>
+    </div>
+  </div>
+
+  {/* 2. Selected node inspector */}
+  <div style={{ borderTop: "1px solid #eee", paddingTop: 12 }}>
+    {selectedNode ? (
+      <div style={{ display: "grid", gap: 12 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 28, lineHeight: 1.1 }}>{selectedNode.label}</h2>
         </div>
 
-        {/* Canon status */}
-        <div style={{ fontSize: 12, color: "#666", display: "grid", gap: 8 }}>
-          <div>
-            Ontology source: <b>{canonGraph ? "Supabase (ontology_*)" : "local seedGraph (graph.json)"}</b>
+        <div style={{ display: "grid", gap: 6 }}>
+          <div style={{ fontSize: 13 }}>
+            <b>Kind:</b> {selectedNode.kind ?? "—"}
           </div>
-          {canonErr && <div style={{ color: "#b00020" }}>canon error: {canonErr}</div>}
-          <button onClick={loadCanonGraph} disabled={canonLoading}>
-            {canonLoading ? "Loading..." : "Reload canon"}
-          </button>
-        </div>
-
-        {/* Proposals */}
-        <div style={{ borderTop: "1px solid #eee", paddingTop: 12, display: "grid", gap: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <b>Proposals</b>
-            <button onClick={() => setShowProposalForm((v) => !v)}>
-              {showProposalForm ? "Закрыть" : "Предложить узел"}
-            </button>
+          <div style={{ fontSize: 13 }}>
+            <b>Status:</b>{" "}
+            {selectedNode.status === "locked"
+              ? "locked"
+              : isSelectedLearned
+              ? "learned"
+              : selectedNode.status ?? "—"}
           </div>
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <select
-              value={proposalStatusFilter}
-              onChange={(e) => setProposalStatusFilter(e.target.value)}
-              style={{ padding: 6, flex: 1 }}
-            >
-              <option value="pending">pending</option>
-              <option value="accepted">accepted</option>
-              <option value="rejected">rejected</option>
-              <option value="">all</option>
-            </select>
-
-            <button onClick={loadNodeProposals} disabled={proposalLoading}>
-              {proposalLoading ? "..." : "Refresh"}
-            </button>
-          </div>
-
-          {proposalErr && <div style={{ fontSize: 12, color: "#b00020" }}>{proposalErr}</div>}
-
-          {showProposalForm && (
-            <div style={{ display: "grid", gap: 8, padding: 10, border: "1px solid #ddd" }}>
-              <input
-                placeholder="Название узла (label)"
-                value={pLabel}
-                onChange={(e) => setPLabel(e.target.value)}
-                style={{ padding: 8 }}
-              />
-
-              <select value={pKind} onChange={(e) => setPKind(e.target.value)} style={{ padding: 8 }}>
-                <option value="problem">problem</option>
-                <option value="skill">skill</option>
-                <option value="action">action</option>
-                <option value="metric">metric</option>
-                <option value="tool">tool</option>
-                <option value="domain">domain</option>
-              </select>
-
-              <input
-                placeholder="Domain (опционально)"
-                value={pDomain}
-                onChange={(e) => setPDomain(e.target.value)}
-                style={{ padding: 8 }}
-              />
-
-              <textarea
-                placeholder="Описание (опционально)"
-                value={pDesc}
-                onChange={(e) => setPDesc(e.target.value)}
-                rows={3}
-                style={{ padding: 8 }}
-              />
-
-              <input
-                placeholder="Привязать к (node id) — по умолчанию выбранный узел"
-                value={pBindSource}
-                onChange={(e) => setPBindSource(e.target.value)}
-                style={{ padding: 8 }}
-              />
-
-              <select value={pBindRel} onChange={(e) => setPBindRel(e.target.value)} style={{ padding: 8 }}>
-                <option value="part_of">part_of (ветка/часть)</option>
-                <option value="requires">requires (требует)</option>
-                <option value="supports">supports (поддерживает)</option>
-                <option value="tool">tool (инструмент)</option>
-              </select>
-
-              <button onClick={submitNodeProposal}>Отправить (pending)</button>
-
-              {pMsg && (
-                <div style={{ fontSize: 12, color: pMsg.startsWith("✅") ? "#1b7f3b" : "#b00020" }}>{pMsg}</div>
-              )}
-            </div>
-          )}
-
-          {nodeProposals.length === 0 ? (
-            <div style={{ fontSize: 12, color: "#777" }}>Пока пусто.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 8 }}>
-              {nodeProposals.map((p) => {
-                const counts = voteCountsById.get(p.id) || { up: 0, down: 0, score: 0 };
-                const myVote = myVotesById.get(p.id) || 0;
-
-                return (
-                  <div
-                    key={p.id}
-                    style={{
-                      border: "1px solid #eee",
-                      padding: 10,
-                      borderRadius: 10,
-                      display: "grid",
-                      gap: 6,
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <b style={{ fontSize: 13 }}>{p.label}</b>
-                      <span style={{ fontSize: 12, color: "#666" }}>{p.status}</span>
-                    </div>
-
-                    <div style={{ fontSize: 12, color: "#444" }}>
-                      kind: <b>{p.kind}</b>
-                      {p.domain ? (
-                        <>
-                          {" "}• domain: <b>{p.domain}</b>
-                        </>
-                      ) : null}
-                    </div>
-
-                    <div style={{ fontSize: 12, color: "#444" }}>
-                      bind: <b>{p.bind_source_id || "—"}</b> • rel: <b>{p.bind_rel || "—"}</b>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
-                      <button
-                        onClick={() => toggleVote(p.id, 1)}
-                        style={{
-                          padding: "6px 10px",
-                          border: "1px solid #ddd",
-                          background: myVote === 1 ? "#e8f5e9" : "#fff",
-                        }}
-                        title="Upvote"
-                      >
-                        👍 {counts.up}
-                      </button>
-
-                      <button
-                        onClick={() => toggleVote(p.id, -1)}
-                        style={{
-                          padding: "6px 10px",
-                          border: "1px solid #ddd",
-                          background: myVote === -1 ? "#ffebee" : "#fff",
-                        }}
-                        title="Downvote"
-                      >
-                        👎 {counts.down}
-                      </button>
-
-                      <div style={{ fontSize: 12, color: "#666" }}>
-                        score: <b>{counts.score}</b>
-                      </div>
-                    </div>
-
-                    {p.description && (
-                      <div style={{ fontSize: 12, color: "#555", whiteSpace: "pre-wrap" }}>{p.description}</div>
-                    )}
-
-                    <div style={{ fontSize: 11, color: "#888" }}>
-                      {new Date(p.created_at).toLocaleString()} • by {String(p.user_id).slice(0, 8)}…
-                    </div>
-                  </div>
-                );
-              })}
+          {selectedNode.domain && (
+            <div style={{ fontSize: 13 }}>
+              <b>Domain:</b> {selectedNode.domain}
             </div>
           )}
         </div>
 
-        {!validation.ok && (
-          <div style={{ padding: 12, background: "#fff3f3", border: "1px solid #ffd0d0" }}>
-            <b>Ontology errors:</b>
-            <ul style={{ margin: "8px 0 0 18px" }}>
-              {validation.errors.slice(0, 10).map((e, i) => (
-                <li key={i}>{e}</li>
+        {selectedNode.description && (
+          <div style={{ fontSize: 13, color: "#555", lineHeight: 1.45, whiteSpace: "pre-wrap" }}>
+            {selectedNode.description}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {canLearn && <button onClick={learnSelectedNode}>Отметить как learned</button>}
+          {isSelectedLearned && <button onClick={unlearnSelectedNode}>Unlearn</button>}
+        </div>
+
+        {Array.isArray(selectedNode.requires) && selectedNode.requires.length > 0 && (
+          <div style={{ display: "grid", gap: 6 }}>
+            <div style={{ fontSize: 13 }}>
+              <b>Требуется:</b>
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {selectedNode.requires.map((id) => (
+                <li key={id}>
+                  {labelById.get(id) ?? id} {learned.has(id) ? "✅" : ""}
+                </li>
               ))}
             </ul>
-            {validation.errors.length > 10 && <div>…and more</div>}
           </div>
         )}
 
-        {selectedNode ? (
-          <div style={{ display: "grid", gap: 12 }}>
-            <h3 style={{ margin: 0 }}>{selectedNode.label}</h3>
-
-            <div style={{ display: "grid", gap: 6 }}>
-              <div style={{ fontSize: 13 }}>
-                <b>Type:</b> {selectedNode.type ?? "—"}
-              </div>
-              <div style={{ fontSize: 13 }}>
-                <b>Kind:</b> {selectedNode.kind ?? "—"}
-              </div>
-              <div style={{ fontSize: 13 }}>
-                <b>Status:</b>{" "}
-                {selectedNode.status === "locked" ? "locked" : isSelectedLearned ? "learned" : selectedNode.status ?? "—"}
-              </div>
-            </div>
-
-            {Array.isArray(selectedNode.requires) && selectedNode.requires.length > 0 && (
-              <div style={{ display: "grid", gap: 6 }}>
-                <div style={{ fontSize: 13 }}>
-                  <b>Требуется:</b>
-                </div>
-                <ul style={{ margin: 0, paddingLeft: 18 }}>
-                  {selectedNode.requires.map((id) => (
-                    <li key={id}>
-                      {labelById.get(id) ?? id} {learned.has(id) ? "✅" : ""}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {selectedNode.status === "locked" && (
-              <div style={{ fontSize: 13, color: "#666" }}>Недоступно: сначала выполни prerequisites.</div>
-            )}
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {canLearn && <button onClick={learnSelectedNode}>Отметить как learned</button>}
-              {isSelectedLearned && <button onClick={unlearnSelectedNode}>Unlearn</button>}
-            </div>
-
-            {activeView?.id === "pushups_dashboard" && (
-              <div style={{ display: "grid", gap: 16, marginTop: 8 }}>
-                <PushupsForm userId={userId} onCreated={() => setRefreshKey((k) => k + 1)} />
-                <PushupsStats userId={userId} refreshKey={refreshKey} />
-                <ExerciseDashboard userId={userId} refreshKey={refreshKey} />
-              </div>
-            )}
+        {selectedNode.status === "locked" && (
+          <div style={{ fontSize: 13, color: "#666" }}>
+            Недоступно: сначала выполни prerequisites.
           </div>
-        ) : (
-          <div style={{ color: "#666" }}>Кликни на узел</div>
         )}
       </div>
+    ) : (
+      <div style={{ color: "#666" }}>Кликни на узел</div>
+    )}
+  </div>
+
+  {/* 3. Active view / dashboard */}
+  {activeView?.id === "pushups_dashboard" && (
+    <div style={{ borderTop: "1px solid #eee", paddingTop: 12, display: "grid", gap: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 600 }}>Связанный dashboard</div>
+      <PushupsForm userId={userId} onCreated={() => setRefreshKey((k) => k + 1)} />
+      <PushupsStats userId={userId} refreshKey={refreshKey} />
+      <ExerciseDashboard userId={userId} refreshKey={refreshKey} />
+    </div>
+  )}
+
+  {/* 4. System */}
+  <div style={{ borderTop: "1px solid #eee", paddingTop: 12, display: "grid", gap: 8 }}>
+    <div style={{ fontSize: 14, fontWeight: 600 }}>Система</div>
+
+    <div style={{ fontSize: 12, color: "#666", display: "grid", gap: 8 }}>
+      <div>
+        Ontology source: <b>{canonGraph ? "Supabase (ontology_*)" : "local seedGraph (graph.json)"}</b>
+      </div>
+
+      {canonErr && <div style={{ color: "#b00020" }}>canon error: {canonErr}</div>}
+
+      <button onClick={loadCanonGraph} disabled={canonLoading}>
+        {canonLoading ? "Loading..." : "Reload canon"}
+      </button>
+    </div>
+
+    {!validation.ok && (
+      <div style={{ padding: 12, background: "#fff3f3", border: "1px solid #ffd0d0", fontSize: 12 }}>
+        <b>Ontology errors:</b>
+        <ul style={{ margin: "8px 0 0 18px" }}>
+          {validation.errors.slice(0, 10).map((e, i) => (
+            <li key={i}>{e}</li>
+          ))}
+        </ul>
+          {validation.errors.length > 10 && <div>…and more</div>}
+      </div>
+    )}
+  </div>
+
+  {/* 5. Proposals */}
+  <div style={{ borderTop: "1px solid #eee", paddingTop: 12, display: "grid", gap: 10 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <b>Proposals</b>
+      <button onClick={() => setShowProposalForm((v) => !v)}>
+        {showProposalForm ? "Закрыть" : "Предложить узел"}
+      </button>
+    </div>
+
+    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <select
+        value={proposalStatusFilter}
+        onChange={(e) => setProposalStatusFilter(e.target.value)}
+        style={{ padding: 6, flex: 1 }}
+      >
+        <option value="pending">pending</option>
+        <option value="accepted">accepted</option>
+        <option value="rejected">rejected</option>
+        <option value="">all</option>
+      </select>
+
+      <button onClick={loadNodeProposals} disabled={proposalLoading}>
+        {proposalLoading ? "..." : "Refresh"}
+      </button>
+    </div>
+
+    {proposalErr && <div style={{ fontSize: 12, color: "#b00020" }}>{proposalErr}</div>}
+
+    {showProposalForm && (
+      <div style={{ display: "grid", gap: 8, padding: 10, border: "1px solid #ddd", borderRadius: 10 }}>
+        <input
+          placeholder="Название узла (label)"
+          value={pLabel}
+          onChange={(e) => setPLabel(e.target.value)}
+          style={{ padding: 8 }}
+        />
+
+        <select value={pKind} onChange={(e) => setPKind(e.target.value)} style={{ padding: 8 }}>
+          <option value="problem">problem</option>
+          <option value="skill">skill</option>
+          <option value="action">action</option>
+          <option value="metric">metric</option>
+          <option value="tool">tool</option>
+          <option value="domain">domain</option>
+        </select>
+
+        <input
+          placeholder="Domain (опционально)"
+          value={pDomain}
+          onChange={(e) => setPDomain(e.target.value)}
+          style={{ padding: 8 }}
+        />
+
+        <textarea
+          placeholder="Описание (опционально)"
+          value={pDesc}
+          onChange={(e) => setPDesc(e.target.value)}
+          rows={3}
+          style={{ padding: 8 }}
+        />
+
+        <input
+          placeholder="Привязать к (node id)"
+          value={pBindSource}
+          onChange={(e) => setPBindSource(e.target.value)}
+          style={{ padding: 8 }}
+        />
+
+        <select value={pBindRel} onChange={(e) => setPBindRel(e.target.value)} style={{ padding: 8 }}>
+          <option value="part_of">part_of (ветка/часть)</option>
+          <option value="requires">requires (требует)</option>
+          <option value="supports">supports (поддерживает)</option>
+          <option value="tool">tool (инструмент)</option>
+        </select>
+
+        <button onClick={submitNodeProposal}>Отправить (pending)</button>
+
+        {pMsg && (
+          <div style={{ fontSize: 12, color: pMsg.startsWith("✅") ? "#1b7f3b" : "#b00020" }}>
+            {pMsg}
+          </div>
+        )}
+      </div>
+    )}
+
+    {nodeProposals.length === 0 ? (
+      <div style={{ fontSize: 12, color: "#777" }}>Пока пусто.</div>
+    ) : (
+      <div style={{ display: "grid", gap: 8 }}>
+        {nodeProposals.map((p) => {
+          const counts = voteCountsById.get(p.id) || { up: 0, down: 0, score: 0 };
+          const myVote = myVotesById.get(p.id) || 0;
+
+          return (
+            <div
+              key={p.id}
+              style={{
+                border: "1px solid #eee",
+                padding: 10,
+                borderRadius: 10,
+                display: "grid",
+                gap: 6,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <b style={{ fontSize: 13 }}>{p.label}</b>
+                <span style={{ fontSize: 12, color: "#666" }}>{p.status}</span>
+              </div>
+
+              <div style={{ fontSize: 12, color: "#444" }}>
+                kind: <b>{p.kind}</b>
+                {p.domain ? (
+                  <>
+                    {" "}• domain: <b>{p.domain}</b>
+                  </>
+                ) : null}
+              </div>
+
+              <div style={{ fontSize: 12, color: "#444" }}>
+                bind: <b>{p.bind_source_id || "—"}</b> • rel: <b>{p.bind_rel || "—"}</b>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+                <button
+                  onClick={() => toggleVote(p.id, 1)}
+                  style={{
+                    padding: "6px 10px",
+                    border: "1px solid #ddd",
+                    background: myVote === 1 ? "#e8f5e9" : "#fff",
+                  }}
+                  title="Upvote"
+                >
+                  👍 {counts.up}
+                </button>
+
+                <button
+                  onClick={() => toggleVote(p.id, -1)}
+                  style={{
+                    padding: "6px 10px",
+                    border: "1px solid #ddd",
+                    background: myVote === -1 ? "#ffebee" : "#fff",
+                  }}
+                  title="Downvote"
+                >
+                  👎 {counts.down}
+                </button>
+
+                <div style={{ fontSize: 12, color: "#666" }}>
+                  score: <b>{counts.score}</b>
+                </div>
+              </div>
+
+              {p.description && (
+                <div style={{ fontSize: 12, color: "#555", whiteSpace: "pre-wrap" }}>
+                  {p.description}
+                </div>
+              )}
+
+              <div style={{ fontSize: 11, color: "#888" }}>
+                {new Date(p.created_at).toLocaleString()} • by {String(p.user_id).slice(0, 8)}…
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
+</div>
     </div>
   );
 }
