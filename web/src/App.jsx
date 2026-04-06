@@ -385,6 +385,7 @@ for (const v of views?.views || []) {
   const [pBindSource, setPBindSource] = useState("");
   const [pBindRel, setPBindRel] = useState("part_of");
   const [pMsg, setPMsg] = useState("");
+  const [showProposalsPanel, setShowProposalsPanel] = useState(false);
 
   useEffect(() => {
     if (selectedNode?.id) setPBindSource(selectedNode.id);
@@ -706,173 +707,184 @@ if (LOW_KINDS.has(pKind) && ROOT_IDS.has(bindId)) {
     )}
   </div>
 
-  {/* 5. Proposals */}
-  <div style={{ borderTop: "1px solid #eee", paddingTop: 12, display: "grid", gap: 10 }}>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <b>Proposals</b>
+{/* 5. Proposals */}
+<div style={{ borderTop: "1px solid #eee", paddingTop: 12, display: "grid", gap: 10 }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <b>Proposals</b>
+
+    <div style={{ display: "flex", gap: 8 }}>
       <button onClick={() => setShowProposalForm((v) => !v)}>
-        {showProposalForm ? "Закрыть" : "Предложить узел"}
+        {showProposalForm ? "Закрыть форму" : "Предложить узел"}
+      </button>
+
+      <button onClick={() => setShowProposalsPanel((v) => !v)}>
+        {showProposalsPanel ? "Скрыть" : "Показать"}
       </button>
     </div>
+  </div>
 
-    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-      <select
-        value={proposalStatusFilter}
-        onChange={(e) => setProposalStatusFilter(e.target.value)}
-        style={{ padding: 6, flex: 1 }}
-      >
-        <option value="pending">pending</option>
-        <option value="accepted">accepted</option>
-        <option value="rejected">rejected</option>
-        <option value="">all</option>
+  {showProposalForm && (
+    <div style={{ display: "grid", gap: 8, padding: 10, border: "1px solid #ddd", borderRadius: 10 }}>
+      <input
+        placeholder="Название узла (label)"
+        value={pLabel}
+        onChange={(e) => setPLabel(e.target.value)}
+        style={{ padding: 8 }}
+      />
+
+      <select value={pKind} onChange={(e) => setPKind(e.target.value)} style={{ padding: 8 }}>
+        <option value="problem">problem</option>
+        <option value="skill">skill</option>
+        <option value="action">action</option>
+        <option value="metric">metric</option>
+        <option value="tool">tool</option>
+        <option value="domain">domain</option>
       </select>
 
-      <button onClick={loadNodeProposals} disabled={proposalLoading}>
-        {proposalLoading ? "..." : "Refresh"}
-      </button>
+      <input
+        placeholder="Domain (опционально)"
+        value={pDomain}
+        onChange={(e) => setPDomain(e.target.value)}
+        style={{ padding: 8 }}
+      />
+
+      <textarea
+        placeholder="Описание (опционально)"
+        value={pDesc}
+        onChange={(e) => setPDesc(e.target.value)}
+        rows={3}
+        style={{ padding: 8 }}
+      />
+
+      <input
+        placeholder="Привязать к (node id)"
+        value={pBindSource}
+        onChange={(e) => setPBindSource(e.target.value)}
+        style={{ padding: 8 }}
+      />
+
+      <select value={pBindRel} onChange={(e) => setPBindRel(e.target.value)} style={{ padding: 8 }}>
+        <option value="part_of">part_of (ветка/часть)</option>
+        <option value="requires">requires (требует)</option>
+        <option value="supports">supports (поддерживает)</option>
+        <option value="tool">tool (инструмент)</option>
+      </select>
+
+      <button onClick={submitNodeProposal}>Отправить (pending)</button>
+
+      {pMsg && (
+        <div style={{ fontSize: 12, color: pMsg.startsWith("✅") ? "#1b7f3b" : "#b00020" }}>
+          {pMsg}
+        </div>
+      )}
     </div>
+  )}
 
-    {proposalErr && <div style={{ fontSize: 12, color: "#b00020" }}>{proposalErr}</div>}
-
-    {showProposalForm && (
-      <div style={{ display: "grid", gap: 8, padding: 10, border: "1px solid #ddd", borderRadius: 10 }}>
-        <input
-          placeholder="Название узла (label)"
-          value={pLabel}
-          onChange={(e) => setPLabel(e.target.value)}
-          style={{ padding: 8 }}
-        />
-
-        <select value={pKind} onChange={(e) => setPKind(e.target.value)} style={{ padding: 8 }}>
-          <option value="problem">problem</option>
-          <option value="skill">skill</option>
-          <option value="action">action</option>
-          <option value="metric">metric</option>
-          <option value="tool">tool</option>
-          <option value="domain">domain</option>
+  {showProposalsPanel && (
+    <>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <select
+          value={proposalStatusFilter}
+          onChange={(e) => setProposalStatusFilter(e.target.value)}
+          style={{ padding: 6, flex: 1 }}
+        >
+          <option value="pending">pending</option>
+          <option value="accepted">accepted</option>
+          <option value="rejected">rejected</option>
+          <option value="">all</option>
         </select>
 
-        <input
-          placeholder="Domain (опционально)"
-          value={pDomain}
-          onChange={(e) => setPDomain(e.target.value)}
-          style={{ padding: 8 }}
-        />
-
-        <textarea
-          placeholder="Описание (опционально)"
-          value={pDesc}
-          onChange={(e) => setPDesc(e.target.value)}
-          rows={3}
-          style={{ padding: 8 }}
-        />
-
-        <input
-          placeholder="Привязать к (node id)"
-          value={pBindSource}
-          onChange={(e) => setPBindSource(e.target.value)}
-          style={{ padding: 8 }}
-        />
-
-        <select value={pBindRel} onChange={(e) => setPBindRel(e.target.value)} style={{ padding: 8 }}>
-          <option value="part_of">part_of (ветка/часть)</option>
-          <option value="requires">requires (требует)</option>
-          <option value="supports">supports (поддерживает)</option>
-          <option value="tool">tool (инструмент)</option>
-        </select>
-
-        <button onClick={submitNodeProposal}>Отправить (pending)</button>
-
-        {pMsg && (
-          <div style={{ fontSize: 12, color: pMsg.startsWith("✅") ? "#1b7f3b" : "#b00020" }}>
-            {pMsg}
-          </div>
-        )}
+        <button onClick={loadNodeProposals} disabled={proposalLoading}>
+          {proposalLoading ? "..." : "Refresh"}
+        </button>
       </div>
-    )}
 
-    {nodeProposals.length === 0 ? (
-      <div style={{ fontSize: 12, color: "#777" }}>Пока пусто.</div>
-    ) : (
-      <div style={{ display: "grid", gap: 8 }}>
-        {nodeProposals.map((p) => {
-          const counts = voteCountsById.get(p.id) || { up: 0, down: 0, score: 0 };
-          const myVote = myVotesById.get(p.id) || 0;
+      {proposalErr && <div style={{ fontSize: 12, color: "#b00020" }}>{proposalErr}</div>}
 
-          return (
-            <div
-              key={p.id}
-              style={{
-                border: "1px solid #eee",
-                padding: 10,
-                borderRadius: 10,
-                display: "grid",
-                gap: 6,
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <b style={{ fontSize: 13 }}>{p.label}</b>
-                <span style={{ fontSize: 12, color: "#666" }}>{p.status}</span>
-              </div>
+      {nodeProposals.length === 0 ? (
+        <div style={{ fontSize: 12, color: "#777" }}>Пока пусто.</div>
+      ) : (
+        <div style={{ display: "grid", gap: 8 }}>
+          {nodeProposals.map((p) => {
+            const counts = voteCountsById.get(p.id) || { up: 0, down: 0, score: 0 };
+            const myVote = myVotesById.get(p.id) || 0;
 
-              <div style={{ fontSize: 12, color: "#444" }}>
-                kind: <b>{p.kind}</b>
-                {p.domain ? (
-                  <>
-                    {" "}• domain: <b>{p.domain}</b>
-                  </>
-                ) : null}
-              </div>
+            return (
+              <div
+                key={p.id}
+                style={{
+                  border: "1px solid #eee",
+                  padding: 10,
+                  borderRadius: 10,
+                  display: "grid",
+                  gap: 6,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <b style={{ fontSize: 13 }}>{p.label}</b>
+                  <span style={{ fontSize: 12, color: "#666" }}>{p.status}</span>
+                </div>
 
-              <div style={{ fontSize: 12, color: "#444" }}>
-                bind: <b>{p.bind_source_id || "—"}</b> • rel: <b>{p.bind_rel || "—"}</b>
-              </div>
+                <div style={{ fontSize: 12, color: "#444" }}>
+                  kind: <b>{p.kind}</b>
+                  {p.domain ? (
+                    <>
+                      {" "}• domain: <b>{p.domain}</b>
+                    </>
+                  ) : null}
+                </div>
 
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
-                <button
-                  onClick={() => toggleVote(p.id, 1)}
-                  style={{
-                    padding: "6px 10px",
-                    border: "1px solid #ddd",
-                    background: myVote === 1 ? "#e8f5e9" : "#fff",
-                  }}
-                  title="Upvote"
-                >
-                  👍 {counts.up}
-                </button>
+                <div style={{ fontSize: 12, color: "#444" }}>
+                  bind: <b>{p.bind_source_id || "—"}</b> • rel: <b>{p.bind_rel || "—"}</b>
+                </div>
 
-                <button
-                  onClick={() => toggleVote(p.id, -1)}
-                  style={{
-                    padding: "6px 10px",
-                    border: "1px solid #ddd",
-                    background: myVote === -1 ? "#ffebee" : "#fff",
-                  }}
-                  title="Downvote"
-                >
-                  👎 {counts.down}
-                </button>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+                  <button
+                    onClick={() => toggleVote(p.id, 1)}
+                    style={{
+                      padding: "6px 10px",
+                      border: "1px solid #ddd",
+                      background: myVote === 1 ? "#e8f5e9" : "#fff",
+                    }}
+                    title="Upvote"
+                  >
+                    👍 {counts.up}
+                  </button>
 
-                <div style={{ fontSize: 12, color: "#666" }}>
-                  score: <b>{counts.score}</b>
+                  <button
+                    onClick={() => toggleVote(p.id, -1)}
+                    style={{
+                      padding: "6px 10px",
+                      border: "1px solid #ddd",
+                      background: myVote === -1 ? "#ffebee" : "#fff",
+                    }}
+                    title="Downvote"
+                  >
+                    👎 {counts.down}
+                  </button>
+
+                  <div style={{ fontSize: 12, color: "#666" }}>
+                    score: <b>{counts.score}</b>
+                  </div>
+                </div>
+
+                {p.description && (
+                  <div style={{ fontSize: 12, color: "#555", whiteSpace: "pre-wrap" }}>
+                    {p.description}
+                  </div>
+                )}
+
+                <div style={{ fontSize: 11, color: "#888" }}>
+                  {new Date(p.created_at).toLocaleString()} • by {String(p.user_id).slice(0, 8)}…
                 </div>
               </div>
-
-              {p.description && (
-                <div style={{ fontSize: 12, color: "#555", whiteSpace: "pre-wrap" }}>
-                  {p.description}
-                </div>
-              )}
-
-              <div style={{ fontSize: 11, color: "#888" }}>
-                {new Date(p.created_at).toLocaleString()} • by {String(p.user_id).slice(0, 8)}…
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    )}
-  </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  )}
+</div>
 </div>
     </div>
   );
